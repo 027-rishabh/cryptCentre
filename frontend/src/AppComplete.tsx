@@ -119,8 +119,8 @@ interface TabPanelProps {
 function TabPanel(props: TabPanelProps) {
   const { children, value, index, ...other } = props
   return (
-    <div hidden={value !== index} {...other}>
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+    <div hidden={value !== index} {...other} style={{ flex: 1, overflow: 'hidden', width: '100%' }}>
+      {value === index && <Box sx={{ p: 3, height: '100%', width: '100%', overflowY: 'auto', overflowX: 'auto' }}>{children}</Box>}
     </div>
   )
 }
@@ -289,17 +289,32 @@ function AppComplete() {
   // Fetch balances
   const fetchBalances = async () => {
     if (!token) return
+
+    // Check if we have API keys for the selected exchange
+    if (!hasApiKeysForSelectedExchange()) {
+      setBalances([]) // Clear balances if no API keys
+      return
+    }
+
     try {
       const response = await axios.get(`http://localhost:8080/api/v1/trading/balances?exchange=${selectedExchange}`)
       setBalances(response.data)
     } catch (error) {
       console.error('Failed to fetch balances:', error)
+      setBalances([]) // Clear balances on error
     }
   }
 
   // Fetch open orders
   const fetchOpenOrders = async () => {
     if (!token) return
+
+    // Check if we have API keys for the selected exchange
+    if (!hasApiKeysForSelectedExchange()) {
+      setOpenOrders([]) // Clear open orders if no API keys
+      return
+    }
+
     try {
       const response = await axios.get(`http://localhost:8080/api/v1/trading/open-orders?exchange=${selectedExchange}&symbol=${selectedPair}`)
       setOpenOrders(response.data)
@@ -389,7 +404,7 @@ function AppComplete() {
       setBalances([])
       setOpenOrders([])
     }
-  }, [token, selectedExchange, selectedPair])
+  }, [token, selectedExchange, selectedPair, apiKeys])
 
   // Save selectedExchange to localStorage when it changes
   useEffect(() => {
@@ -662,7 +677,7 @@ function AppComplete() {
           </Toolbar>
         </AppBar>
 
-        <Container maxWidth="xl" sx={{ mt: 3 }}>
+        <Container maxWidth={false} sx={{ mt: 3, px: 3 }}>
           {/* Alert for non-logged in users */}
           {!user && (
             <Alert severity="info" sx={{ mb: 3 }}>
@@ -720,7 +735,7 @@ function AppComplete() {
               <Card>
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
-                    DEX Price (LANDSHARE/USDT)
+                    DEX Price ({dexPrice?.symbol || 'LANDSHARE/USDT'})
                   </Typography>
                   <Typography variant="h3" component="div" sx={{ color: '#ffa500' }}>
                     {dexPrice ? formatPrice(dexPrice.price) : '---'}
@@ -756,7 +771,16 @@ function AppComplete() {
           </Grid>
 
           {/* Main Trading Interface */}
-          <Paper sx={{ p: 2 }}>
+          <Paper sx={{
+            p: 2,
+            height: 'calc(100vh - 350px)',
+            minHeight: '600px',
+            width: '100%',
+            maxWidth: '100%',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
             <Tabs value={tabValue} onChange={handleTabChange}>
               <Tab label="Limit Orders" />
               <Tab label="Market Making" />
