@@ -169,8 +169,18 @@ function AppComplete() {
   // Market Making State
   const [mmConfig, setMmConfig] = useState({
     spread: 0.5,
-    numOrders: 4,
+    totalAmount: 100,
     referenceSource: 'CEX',
+  })
+
+  // MM API Keys state (separate from trading API keys)
+  const [mmApiKeys, setMmApiKeys] = useState<any[]>([])
+  const [mmApiKeysOpen, setMmApiKeysOpen] = useState(false)
+  const [newMmApiKey, setNewMmApiKey] = useState({
+    exchange: '',
+    apiKey: '',
+    apiSecret: '',
+    apiMemo: '',
   })
 
   // Order Form State
@@ -194,6 +204,7 @@ function AppComplete() {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
       fetchUserProfile()
       fetchApiKeys()
+      fetchMmApiKeys()
     }
   }, [token])
 
@@ -405,8 +416,12 @@ function AppComplete() {
 
     // Only fetch data for the currently active tab
     if (tabValue === 0) {
-      // Limit Orders tab - fetch open orders only
+      // Limit Orders tab - fetch open orders and balances
       fetchOpenOrders()
+      fetchBalances()
+    } else if (tabValue === 1) {
+      // Market Making tab - fetch balances for MM
+      fetchBalances()
     } else if (tabValue === 2) {
       // Order History tab - fetch order history only when tab is active
       fetchOrders()
@@ -495,6 +510,49 @@ function AppComplete() {
     }
   }
 
+  // Fetch MM API keys
+  const fetchMmApiKeys = async () => {
+    try {
+      const response = await axios.get('http://localhost:8080/api/v1/mm/api-keys')
+      setMmApiKeys(response.data)
+    } catch (error) {
+      console.error('Failed to fetch MM API keys:', error)
+    }
+  }
+
+  // Check if current exchange has MM API keys configured
+  const hasMmApiKeysForSelectedExchange = () => {
+    return mmApiKeys.some(key => key.exchange.toLowerCase() === selectedExchange.toLowerCase())
+  }
+
+  // Handle save MM API key
+  const handleSaveMmApiKey = async () => {
+    if (!newMmApiKey.exchange || !newMmApiKey.apiKey || !newMmApiKey.apiSecret) {
+      setSnackbar({ open: true, message: 'Please fill all required fields', severity: 'warning' })
+      return
+    }
+
+    try {
+      await axios.post('http://localhost:8080/api/v1/mm/api-keys', newMmApiKey)
+      setSnackbar({ open: true, message: 'MM API key saved successfully!', severity: 'success' })
+      fetchMmApiKeys()
+      setNewMmApiKey({ exchange: '', apiKey: '', apiSecret: '', apiMemo: '' })
+    } catch (error: any) {
+      setSnackbar({ open: true, message: error.response?.data?.error || 'Failed to save MM API key', severity: 'error' })
+    }
+  }
+
+  // Handle delete MM API key
+  const handleDeleteMmApiKey = async (exchange: string) => {
+    try {
+      await axios.delete(`http://localhost:8080/api/v1/mm/api-keys/${exchange}`)
+      setSnackbar({ open: true, message: `MM API key for ${exchange} deleted successfully!`, severity: 'success' })
+      fetchMmApiKeys()
+    } catch (error: any) {
+      setSnackbar({ open: true, message: error.response?.data?.error || 'Failed to delete MM API key', severity: 'error' })
+    }
+  }
+
   // Handle place order
   const handlePlaceOrder = async () => {
     if (!token) {
@@ -547,11 +605,11 @@ function AppComplete() {
       return
     }
 
-    // Check if API keys exist for the selected exchange
-    if (!hasApiKeysForSelectedExchange()) {
+    // Check if MM API keys exist for the selected exchange
+    if (!hasMmApiKeysForSelectedExchange()) {
       setSnackbar({
         open: true,
-        message: `No API keys configured for ${selectedExchange.toUpperCase()}. Please add API keys to start market making.`,
+        message: `No Market Making API keys configured for ${selectedExchange.toUpperCase()}. Please add MM API keys to start market making.`,
         severity: 'warning'
       })
       return
@@ -562,7 +620,7 @@ function AppComplete() {
         exchange: selectedExchange,
         symbol: selectedPair,
         spreadPercentage: mmConfig.spread,
-        numberOfOrders: mmConfig.numOrders,
+        totalAmount: mmConfig.totalAmount,
         referenceSource: mmConfig.referenceSource,
       })
 
@@ -819,6 +877,38 @@ function AppComplete() {
                         </Button>
                       </Alert>
                     )}
+                    {user && hasApiKeysForSelectedExchange() && balances.length > 0 && (
+                      <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(0, 255, 136, 0.05)', borderRadius: 1 }}>
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                          Available Balance
+                        </Typography>
+                        <Grid container spacing={1}>
+                          {(() => {
+                            const [base, quote] = selectedPair.split('/');
+                            const baseBalance = balances.find(b => b.currency === base);
+                            const quoteBalance = balances.find(b => b.currency === quote);
+                            return (
+                              <>
+                                {baseBalance && (
+                                  <Grid item xs={6}>
+                                    <Typography variant="body2">
+                                      <strong>{base}:</strong> {baseBalance.available.toFixed(8)}
+                                    </Typography>
+                                  </Grid>
+                                )}
+                                {quoteBalance && (
+                                  <Grid item xs={6}>
+                                    <Typography variant="body2">
+                                      <strong>{quote}:</strong> {quoteBalance.available.toFixed(2)}
+                                    </Typography>
+                                  </Grid>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </Grid>
+                      </Box>
+                    )}
                     <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
                       <Button
                         fullWidth
@@ -1002,21 +1092,65 @@ function AppComplete() {
               <Grid container spacing={3}>
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 3 }}>
-                    <Typography variant="h6" gutterBottom>
-                      Market Making Configuration
-                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography variant="h6">
+                        Market Making Configuration
+                      </Typography>
+                      {user && (
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<VpnKey />}
+                          onClick={() => setMmApiKeysOpen(true)}
+                        >
+                          MM API Keys
+                        </Button>
+                      )}
+                    </Box>
                     {!user && (
                       <Alert severity="warning" sx={{ mb: 2 }}>
                         Login required for market making
                       </Alert>
                     )}
-                    {user && !hasApiKeysForSelectedExchange() && (
+                    {user && !hasMmApiKeysForSelectedExchange() && (
                       <Alert severity="warning" sx={{ mb: 2 }}>
-                        No API keys configured for {selectedExchange.toUpperCase()}.
-                        <Button size="small" onClick={() => setApiKeysOpen(true)} sx={{ ml: 1 }}>
-                          Add API Keys
+                        No Market Making API keys configured for {selectedExchange.toUpperCase()}.
+                        <Button size="small" onClick={() => setMmApiKeysOpen(true)} sx={{ ml: 1 }}>
+                          Add MM API Keys
                         </Button>
                       </Alert>
+                    )}
+                    {user && hasApiKeysForSelectedExchange() && balances.length > 0 && (
+                      <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(0, 255, 136, 0.05)', borderRadius: 1 }}>
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                          Available Balance
+                        </Typography>
+                        <Grid container spacing={1}>
+                          {(() => {
+                            const [base, quote] = selectedPair.split('/');
+                            const baseBalance = balances.find(b => b.currency === base);
+                            const quoteBalance = balances.find(b => b.currency === quote);
+                            return (
+                              <>
+                                {baseBalance && (
+                                  <Grid item xs={6}>
+                                    <Typography variant="body2">
+                                      <strong>{base}:</strong> {baseBalance.available.toFixed(8)}
+                                    </Typography>
+                                  </Grid>
+                                )}
+                                {quoteBalance && (
+                                  <Grid item xs={6}>
+                                    <Typography variant="body2">
+                                      <strong>{quote}:</strong> {quoteBalance.available.toFixed(2)}
+                                    </Typography>
+                                  </Grid>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </Grid>
+                      </Box>
                     )}
                     <TextField
                       fullWidth
@@ -1029,20 +1163,23 @@ function AppComplete() {
                       type="number"
                       inputProps={{ step: 0.1, min: 0.1, max: 10 }}
                       disabled={!user}
-                      helperText="Percentage spread from reference price"
+                      helperText="Percentage spread from mid price (reference price)"
                     />
                     <TextField
                       fullWidth
-                      label="Number of Orders"
-                      value={mmConfig.numOrders}
+                      label="Total Amount (USDT)"
+                      value={mmConfig.totalAmount}
                       onChange={(e) =>
-                        setMmConfig({ ...mmConfig, numOrders: parseInt(e.target.value) })
+                        setMmConfig({ ...mmConfig, totalAmount: parseFloat(e.target.value) })
                       }
                       sx={{ mb: 2 }}
                       type="number"
-                      inputProps={{ step: 2, min: 2, max: 20 }}
+                      inputProps={{ step: 10, min: 10 }}
                       disabled={!user}
-                      helperText="Even number of buy/sell orders"
+                      helperText="Total capital to deploy (split 50/50 between buy and sell)"
+                      InputProps={{
+                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                      }}
                     />
                     <FormControl fullWidth sx={{ mb: 2 }}>
                       <InputLabel>Reference Source</InputLabel>
@@ -1413,6 +1550,104 @@ function AppComplete() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setApiKeysOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MM API Keys Dialog */}
+      <Dialog open={mmApiKeysOpen} onClose={() => setMmApiKeysOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Market Making API Keys Management</DialogTitle>
+        <DialogContent>
+          <Typography variant="subtitle2" sx={{ mb: 2 }}>
+            Add your exchange API keys specifically for Market Making. These are separate from your trading API keys for security.
+          </Typography>
+
+          {/* List existing MM keys */}
+          <List>
+            {mmApiKeys.length === 0 ? (
+              <ListItem>
+                <ListItemText primary="No MM API keys saved yet" secondary="Add your first MM API key below" />
+              </ListItem>
+            ) : (
+              mmApiKeys.map((key, index) => (
+                <ListItem key={index}>
+                  <ListItemText
+                    primary={key.exchange.toUpperCase()}
+                    secondary={`Added: ${new Date(key.created_at).toLocaleDateString()}`}
+                  />
+                  <ListItemSecondaryAction>
+                    <IconButton
+                      edge="end"
+                      aria-label="delete"
+                      onClick={() => handleDeleteMmApiKey(key.exchange)}
+                    >
+                      <Delete />
+                    </IconButton>
+                  </ListItemSecondaryAction>
+                </ListItem>
+              ))
+            )}
+          </List>
+
+          {/* Add new MM key form */}
+          <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
+            Add New MM API Key
+          </Typography>
+
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel>Exchange</InputLabel>
+            <Select
+              value={newMmApiKey.exchange}
+              label="Exchange"
+              onChange={(e) => setNewMmApiKey({ ...newMmApiKey, exchange: e.target.value })}
+            >
+              <MenuItem value="bingx">BingX</MenuItem>
+              <MenuItem value="bitmart">BitMart</MenuItem>
+              <MenuItem value="ascendx">AscendX</MenuItem>
+              <MenuItem value="gateio">Gate.io</MenuItem>
+              <MenuItem value="mexc">MEXC</MenuItem>
+            </Select>
+          </FormControl>
+
+          <TextField
+            fullWidth
+            label="API Key"
+            value={newMmApiKey.apiKey}
+            onChange={(e) => setNewMmApiKey({ ...newMmApiKey, apiKey: e.target.value })}
+            sx={{ mb: 2 }}
+            placeholder="Enter your MM API key"
+          />
+
+          <TextField
+            fullWidth
+            label="API Secret"
+            type="password"
+            value={newMmApiKey.apiSecret}
+            onChange={(e) => setNewMmApiKey({ ...newMmApiKey, apiSecret: e.target.value })}
+            sx={{ mb: 2 }}
+            placeholder="Enter your MM API secret"
+          />
+
+          <TextField
+            fullWidth
+            label="API Memo/Passphrase (optional)"
+            value={newMmApiKey.apiMemo}
+            onChange={(e) => setNewMmApiKey({ ...newMmApiKey, apiMemo: e.target.value })}
+            sx={{ mb: 2 }}
+            placeholder="Required for some exchanges like BitMart"
+            helperText="Some exchanges require an additional passphrase or memo"
+          />
+
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={handleSaveMmApiKey}
+            fullWidth
+          >
+            Save MM API Key
+          </Button>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMmApiKeysOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
 

@@ -1,330 +1,498 @@
-# Cryptocurrency Trading Platform
+# Crypto Trading Platform
 
-A high-performance, production-ready cryptocurrency trading platform with automated market making capabilities, supporting multiple exchanges including BingX, BitMart, AscendX, Gate.io, and MEXC.
+A full-stack cryptocurrency trading platform with automated market making capabilities. Built with React, Node.js, Express, and CCXT for multi-exchange support.
 
 ## Features
 
-- **Multi-Exchange Support**: Seamlessly trade across BingX, BitMart, AscendX, Gate.io, and MEXC
-- **Automated Market Making**: Advanced market making bot with configurable spread and order placement
-- **Real-time Price Feeds**: WebSocket connections for live price updates from both CEX and DEX sources
-- **Order Management**: Comprehensive order placement, tracking, and history
-- **API Key Management**: Secure storage and management of exchange API credentials
-- **Modern UI**: Clean, responsive React interface with Material-UI components
-- **High Performance**: C++ backend with Drogon framework for low-latency trading
-- **ACID Compliant Database**: SQLite with full transaction support
+- **Multi-Exchange Support**: Trade on BingX, BitMart, AscendX, Gate.io, and MEXC
+- **Real-time Market Data**: Live price feeds and order book data
+- **Limit Order Trading**: Place buy/sell orders with real-time execution
+- **Automated Market Making**: Cluster-based market making strategy with configurable spread
+- **Secure API Key Management**: Encrypted storage of exchange API credentials
+- **Real-time Updates**: WebSocket integration for live price updates
+- **User Authentication**: Secure JWT-based authentication system
+- **Order Management**: Track open orders, order history, and balances
 
-## Technology Stack
-
-### Backend
-- **Framework**: Drogon (Modern C++ Web Framework)
-- **Language**: C++17
-- **Database**: SQLite3 with ACID compliance
-- **Authentication**: JWT tokens with bcrypt password hashing
-- **Encryption**: AES-256 for API key storage
-- **WebSocket**: Native WebSocket support for real-time updates
+## Architecture
 
 ### Frontend
-- **Framework**: React 18 with TypeScript
-- **UI Library**: Material-UI (MUI)
-- **State Management**: Zustand
-- **Charts**: Recharts
-- **Build Tool**: Vite
-- **API Client**: Axios
-- **WebSocket Client**: Socket.io-client
+- **React 18** with TypeScript
+- **Material-UI (MUI)** for modern UI components
+- **Vite** for fast development and building
+- **Axios** for API communication
 
-## Project Structure
+### Backend
+- **Node.js** with Express
+- **SQLite** database for data persistence
+- **CCXT** library for exchange integration
+- **JWT** for authentication
+- **bcrypt** for password hashing
+- **WebSocket** for real-time updates
 
-```
-crypto-trading-platform/
-├── backend/
-│   ├── src/
-│   │   ├── main.cpp           # Application entry point
-│   │   ├── server/            # Web server and routing
-│   │   ├── api/               # Exchange API integrations
-│   │   ├── websocket/         # WebSocket handlers
-│   │   ├── database/          # Database layer
-│   │   ├── trading/           # Trading logic and market making
-│   │   ├── controllers/       # HTTP request handlers
-│   │   └── utils/             # Utilities (crypto, logging, config)
-│   ├── include/               # Header files
-│   ├── config/               # Configuration files
-│   ├── tests/                # Unit and integration tests
-│   └── CMakeLists.txt        # Build configuration
-└── frontend/
-    ├── src/
-    │   ├── components/       # React components
-    │   ├── pages/           # Page components
-    │   ├── services/        # API services
-    │   ├── hooks/           # Custom React hooks
-    │   ├── stores/          # State management
-    │   └── utils/           # Utility functions
-    └── package.json         # Node.js dependencies
-```
+### Market Making Strategy
+- **Cluster-based approach**: Places 1 buy + 1 sell order as a paired unit
+- **Reference price source**: CEX or DEX price
+- **Same-price replacement**: Refills at the same price when orders are filled
+- **Configurable spread**: Customize spread percentage from mid price
+- **Fill detection**: Every 5 seconds check for filled orders
+- **Price monitoring**: Refresh orders on significant price movement
 
 ## Prerequisites
 
-### Backend Requirements
-- **C++ Compiler**: GCC 9+, Clang 10+, or MSVC 2019+
-- **CMake**: Version 3.16 or higher
-- **Libraries**:
-  - Drogon framework
-  - OpenSSL
-  - SQLite3
-  - libcurl
-  - JsonCpp
-  - UUID library
+- **Node.js** (v18 or higher)
+- **npm** or **yarn**
+- Exchange API keys (for trading functionality)
 
-### Frontend Requirements
-- **Node.js**: Version 18+
-- **npm**: Version 9+
+## Local Installation
 
-## Installation
+### 1. Clone the Repository
 
-### 1. Install Backend Dependencies
-
-#### Ubuntu/Debian
 ```bash
-sudo apt-get update
-sudo apt-get install -y \
-    build-essential \
-    cmake \
-    git \
-    libssl-dev \
-    libsqlite3-dev \
-    libcurl4-openssl-dev \
-    libjsoncpp-dev \
-    uuid-dev \
-    zlib1g-dev
-
-# Install Drogon
-git clone https://github.com/drogonframework/drogon
-cd drogon
-git submodule update --init
-mkdir build
-cd build
-cmake ..
-make && sudo make install
+git clone https://github.com/yourusername/crypto-trading-platform.git
+cd crypto-trading-platform
 ```
 
-#### macOS
-```bash
-brew install cmake openssl sqlite curl jsoncpp ossp-uuid
-
-# Install Drogon
-git clone https://github.com/drogonframework/drogon
-cd drogon
-git submodule update --init
-mkdir build
-cd build
-cmake ..
-make && sudo make install
-```
-
-### 2. Build Backend
+### 2. Install Backend Dependencies
 
 ```bash
-cd crypto-trading-platform/backend
-mkdir build
-cd build
-cmake ..
-make -j$(nproc)
-```
-
-### 3. Setup Frontend
-
-```bash
-cd crypto-trading-platform/frontend
+cd backend-node
 npm install
 ```
 
-## Configuration
-
-### Backend Configuration
-
-Edit `backend/config/config.json`:
-
-```json
-{
-    "server": {
-        "port": 8080,
-        "threads": 16
-    },
-    "database": {
-        "path": "trading.db"
-    },
-    "security": {
-        "jwt_secret": "YOUR_SECRET_KEY",
-        "aes_key": "YOUR_ENCRYPTION_KEY"
-    },
-    "cors": {
-        "origin": "http://localhost:3000"
-    }
-}
-```
-
-### Frontend Configuration
-
-Create `.env` file in frontend directory:
-
-```env
-VITE_API_URL=http://localhost:8080
-VITE_WS_URL=ws://localhost:8080
-```
-
-## Running the Application
-
-### Start Backend Server
+### 3. Install Frontend Dependencies
 
 ```bash
-cd crypto-trading-platform/backend/build
-./CryptoTradingPlatform
+cd ../frontend
+npm install
+```
+
+### 4. Configure Environment (Optional)
+
+Create a `.env` file in the `backend-node` directory:
+
+```env
+PORT=8080
+JWT_SECRET=your-secret-key-change-in-production
+```
+
+### 5. Run the Backend
+
+```bash
+cd backend-node
+node server.js
 ```
 
 The backend will start on `http://localhost:8080`
 
-### Start Frontend Development Server
+### 6. Run the Frontend (in a new terminal)
 
 ```bash
-cd crypto-trading-platform/frontend
+cd frontend
 npm run dev
 ```
 
-The frontend will start on `http://localhost:3000`
+The frontend will start on `http://localhost:5173`
 
-## Production Build
+### 7. Access the Application
 
-### Backend
+Open your browser and navigate to: `http://localhost:5173`
+
+## VPS Deployment
+
+### Prerequisites
+- Ubuntu 20.04+ or similar Linux distribution
+- Root or sudo access
+- Domain name (optional, for HTTPS)
+
+### 1. Server Setup
+
 ```bash
-cd backend/build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
+# Update system packages
+sudo apt update && sudo apt upgrade -y
+
+# Install Node.js 18+
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Install PM2 for process management
+sudo npm install -g pm2
+
+# Install Nginx (optional, for reverse proxy)
+sudo apt install -y nginx
+
+# Install Certbot for SSL (optional)
+sudo apt install -y certbot python3-certbot-nginx
 ```
 
-### Frontend
+### 2. Clone and Setup Application
+
 ```bash
-cd frontend
+# Create application directory
+cd /var/www
+sudo git clone https://github.com/yourusername/crypto-trading-platform.git
+cd crypto-trading-platform
+
+# Set permissions
+sudo chown -R $USER:$USER /var/www/crypto-trading-platform
+```
+
+### 3. Install Dependencies
+
+```bash
+# Backend
+cd backend-node
+npm install --production
+
+# Frontend
+cd ../frontend
+npm install
 npm run build
 ```
 
-The production files will be in `frontend/dist/`
+### 4. Configure Environment
 
-## API Documentation
-
-### Authentication Endpoints
-
-- `POST /api/v1/auth/register` - Register new user
-- `POST /api/v1/auth/login` - User login
-- `POST /api/v1/auth/logout` - User logout
-- `POST /api/v1/auth/refresh` - Refresh JWT token
-
-### Trading Endpoints
-
-- `GET /api/v1/trading/pairs` - Get available trading pairs
-- `GET /api/v1/trading/balances` - Get account balances
-- `POST /api/v1/orders/create` - Place new order
-- `POST /api/v1/orders/cancel` - Cancel order
-- `GET /api/v1/orders/history` - Get order history
-- `GET /api/v1/orders/open` - Get open orders
-
-### Market Making
-
-- `POST /api/v1/market-making/start` - Start market making session
-- `POST /api/v1/market-making/stop` - Stop market making session
-- `GET /api/v1/market-making/sessions` - Get active sessions
-
-### WebSocket Endpoints
-
-- `/ws/v1/prices` - Real-time price updates
-- `/ws/v1/orders` - Order status updates
-- `/ws/v1/notifications` - System notifications
-
-## Security Features
-
-- **JWT Authentication**: Secure token-based authentication
-- **Password Hashing**: bcrypt with configurable rounds
-- **API Key Encryption**: AES-256 encryption for stored API keys
-- **Rate Limiting**: Configurable per-user and per-IP limits
-- **HTTPS Support**: SSL/TLS encryption for production
-- **Input Validation**: Comprehensive input sanitization
-- **SQL Injection Prevention**: Parameterized queries
-- **CORS Configuration**: Controlled cross-origin access
-
-## Testing
-
-### Backend Tests
 ```bash
-cd backend/build
-ctest --verbose
+cd /var/www/crypto-trading-platform/backend-node
+nano .env
 ```
 
-### Frontend Tests
-```bash
-cd frontend
-npm test
+Add:
+```env
+PORT=8080
+JWT_SECRET=<generate-strong-random-key>
+NODE_ENV=production
 ```
 
-## Docker Support
+### 5. Start Backend with PM2
 
-### Build Docker Image
 ```bash
-docker build -t crypto-trading-platform .
+cd /var/www/crypto-trading-platform/backend-node
+
+# Start the backend
+pm2 start server.js --name crypto-backend
+
+# Save PM2 configuration
+pm2 save
+
+# Enable PM2 to start on boot
+pm2 startup
 ```
 
-### Run with Docker Compose
+### 6. Configure Nginx (Reverse Proxy)
+
 ```bash
-docker-compose up -d
+sudo nano /etc/nginx/sites-available/crypto-trading
+```
+
+Add configuration:
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    # Frontend
+    location / {
+        root /var/www/crypto-trading-platform/frontend/dist;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://localhost:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # WebSocket
+    location /ws {
+        proxy_pass http://localhost:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+Enable the site:
+```bash
+sudo ln -s /etc/nginx/sites-available/crypto-trading /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+### 7. Setup SSL with Let's Encrypt (Optional)
+
+```bash
+sudo certbot --nginx -d your-domain.com
+```
+
+### 8. Update Frontend API URL
+
+Edit `/var/www/crypto-trading-platform/frontend/src/AppComplete.tsx` and replace all instances of `http://localhost:8080` with your production API URL:
+
+```bash
+cd /var/www/crypto-trading-platform/frontend
+# Use sed to replace localhost URLs
+find src -type f -name "*.tsx" -exec sed -i 's|http://localhost:8080|https://your-domain.com|g' {} +
+
+# Rebuild frontend
+npm run build
+```
+
+### 9. Firewall Configuration
+
+```bash
+# Allow SSH, HTTP, and HTTPS
+sudo ufw allow 22
+sudo ufw allow 80
+sudo ufw allow 443
+sudo ufw enable
+```
+
+### 10. Monitor Application
+
+```bash
+# View backend logs
+pm2 logs crypto-backend
+
+# Check backend status
+pm2 status
+
+# Monitor resources
+pm2 monit
+
+# Restart backend
+pm2 restart crypto-backend
+```
+
+## Using the Platform
+
+### 1. Register an Account
+
+1. Click "Register" button
+2. Enter username, email, and password
+3. You'll be automatically logged in
+
+### 2. Add Exchange API Keys
+
+#### For Trading:
+1. Click the **key icon** in the top navigation
+2. Select your exchange
+3. Enter API Key and Secret
+4. Save
+
+#### For Market Making:
+1. Go to **Market Making** tab
+2. Click **MM API Keys** button
+3. Add separate API keys for market making
+
+### 3. Place Manual Orders
+
+1. Select exchange and trading pair
+2. Go to **Limit Orders** tab
+3. Choose Buy or Sell
+4. Enter price and amount
+5. Click "Place Order"
+
+### 4. Start Market Making
+
+1. Go to **Market Making** tab
+2. Configure:
+   - **Spread Percentage**: Distance from mid price (e.g., 0.5%)
+   - **Total Amount**: Capital to deploy in USDT (split 50/50)
+   - **Reference Source**: CEX or DEX price
+3. Click "Start Market Making"
+4. Monitor active sessions
+
+## Market Making Configuration
+
+### Spread Percentage
+- **0.1% - 0.5%**: Tight spread for high liquidity pairs
+- **0.5% - 2%**: Medium spread for moderate liquidity
+- **2% - 10%**: Wide spread for low liquidity pairs
+
+### Total Amount
+- Minimum: $10 USDT
+- Recommended: $100+ for meaningful market making
+- Split 50/50 between buy and sell orders
+
+### Reference Source
+- **CEX Price**: Use exchange mid price (bid + ask) / 2
+- **DEX Price**: Use DexScreener price (for specific pairs)
+
+## Security Best Practices
+
+### API Keys
+- **Read-Only**: Not supported (trading requires write access)
+- **IP Whitelist**: Enable on exchange if available
+- **Separate Keys**: Use different keys for trading vs market making
+- **Withdraw Disabled**: Disable withdraw permissions on exchange
+
+### Password
+- Use strong, unique passwords
+- Change default JWT secret in production
+- Enable 2FA on exchange accounts
+
+### VPS Security
+- Use SSH keys instead of passwords
+- Keep system packages updated
+- Use firewall (UFW)
+- Regular backups of SQLite database
+
+## Database
+
+The platform uses SQLite for data persistence. Database file: `backend-node/trading.db`
+
+### Backup Database
+
+```bash
+# Local backup
+cp backend-node/trading.db backend-node/trading.db.backup
+
+# VPS backup
+cd /var/www/crypto-trading-platform/backend-node
+sudo cp trading.db /backup/trading.db.$(date +%Y%m%d_%H%M%S)
 ```
 
 ## Troubleshooting
 
-### Common Issues
+### Backend won't start
+```bash
+# Check if port 8080 is in use
+sudo lsof -i :8080
 
-1. **Database Lock Error**
-   - Solution: Ensure only one instance is running
-   - Check file permissions on trading.db
+# Check logs
+cd backend-node
+npm start
+```
 
-2. **WebSocket Connection Failed**
-   - Check firewall settings
-   - Verify CORS configuration
+### Frontend build errors
+```bash
+cd frontend
+rm -rf node_modules package-lock.json
+npm install
+npm run build
+```
 
-3. **API Key Invalid**
-   - Ensure keys are properly encrypted
-   - Check exchange API permissions
+### Exchange API errors
+- Verify API keys are correct
+- Check API key permissions (spot trading enabled)
+- Ensure IP whitelist includes your server IP
+- Check exchange API rate limits
 
-4. **Build Errors**
-   - Verify all dependencies are installed
-   - Check compiler version compatibility
+### Market Making not starting
+- Verify MM API keys are configured for selected exchange
+- Check sufficient balance for total amount
+- Ensure trading pair is available on exchange
+- Review backend logs: `pm2 logs crypto-backend`
 
-## Performance Optimization
+## API Endpoints
 
-- **Database**: Uses WAL mode for better concurrency
-- **Connection Pooling**: Reuses database and HTTP connections
-- **Async Operations**: Non-blocking I/O for all network operations
-- **Memory Management**: Smart pointers and RAII patterns
-- **Frontend**: Virtual scrolling and memoization for large datasets
+### Authentication
+- `POST /api/v1/auth/register` - Register new user
+- `POST /api/v1/auth/login` - Login user
+- `GET /api/v1/user/profile` - Get user profile
 
-## Contributing
+### Trading
+- `GET /api/v1/market/ticker` - Get ticker data
+- `GET /api/v1/market/orderbook` - Get order book
+- `POST /api/v1/orders/create` - Create order
+- `GET /api/v1/orders/open` - Get open orders
+- `GET /api/v1/orders/history` - Get order history
+- `DELETE /api/v1/orders/:orderId` - Cancel order
+- `GET /api/v1/trading/balances` - Get balances
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+### Market Making
+- `POST /api/v1/market-making/start` - Start MM session
+- `POST /api/v1/market-making/stop` - Stop MM session
+- `GET /api/v1/market-making/sessions` - Get all sessions
+- `GET /api/v1/market-making/sessions/:sessionId` - Get session details
+
+### API Keys Management
+- `POST /api/v1/user/api-keys` - Add API key
+- `GET /api/v1/user/api-keys` - List API keys
+- `DELETE /api/v1/user/api-keys/:exchange` - Delete API key
+- `POST /api/v1/mm/api-keys` - Add MM API key
+- `GET /api/v1/mm/api-keys` - List MM API keys
+- `DELETE /api/v1/mm/api-keys/:exchange` - Delete MM API key
+
+## Supported Exchanges
+
+| Exchange | Spot Trading | Market Making | API Memo Required |
+|----------|-------------|---------------|-------------------|
+| BingX    | ✅ | ✅ | No |
+| BitMart  | ✅ | ✅ | Yes (Memo) |
+| AscendX  | ✅ | ✅ | No |
+| Gate.io  | ✅ | ✅ | No |
+| MEXC     | ✅ | ✅ | No |
+
+## Performance
+
+### Market Making
+- **Fill Detection**: 5 seconds
+- **Price Refresh**: 2 minutes (CEX) / Event-driven (DEX)
+- **Order Placement**: ~100ms per order
+- **Database Writes**: Asynchronous (non-blocking)
+
+### Recommended VPS Specs
+- **Minimal**: 1 CPU, 1GB RAM, 10GB SSD
+- **Recommended**: 2 CPU, 2GB RAM, 20GB SSD
+- **High Volume**: 4 CPU, 4GB RAM, 40GB SSD
+
+## Development
+
+### Project Structure
+```
+crypto-trading-platform/
+├── backend-node/
+│   ├── server.js                 # Main backend server
+│   ├── marketMakingBot.js        # Cluster-based MM bot
+│   ├── exchangeConnector.js      # CCXT integration
+│   ├── mmApproaches/             # Alternative MM strategies
+│   └── trading.db                # SQLite database
+├── frontend/
+│   ├── src/
+│   │   ├── AppComplete.tsx       # Main React component
+│   │   └── main.tsx              # React entry point
+│   ├── index.html
+│   └── vite.config.ts
+└── README.md
+```
+
+### Running in Development Mode
+
+```bash
+# Terminal 1: Backend with auto-restart
+cd backend-node
+npm install -g nodemon
+nodemon server.js
+
+# Terminal 2: Frontend with hot reload
+cd frontend
+npm run dev
+```
 
 ## License
 
-This project is proprietary software. All rights reserved.
+MIT License - See LICENSE file for details
 
 ## Support
 
-For issues and questions:
-- Create an issue on GitHub
-- Contact the development team
+For issues, questions, or contributions, please open an issue on GitHub.
 
 ## Disclaimer
 
-This software is for educational and legitimate trading purposes only. Users are responsible for compliance with local regulations and exchange terms of service.
+This software is for educational purposes only. Trading cryptocurrencies carries risk. Only trade with funds you can afford to lose. The developers are not responsible for any financial losses incurred while using this platform.
 
----
+## Version
 
-**Note**: Always test with small amounts first and never share your API keys or credentials.
+Current Version: 1.0.0
+Last Updated: October 2025

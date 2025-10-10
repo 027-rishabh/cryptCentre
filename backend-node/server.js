@@ -21,6 +21,7 @@ import {
     cancelOrder,
     getMarkets
 } from './exchangeConnector.js';
+import MarketMakingBot from './marketMakingBot.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -41,6 +42,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'crypto-trading-secret-key-change-i
 
 // Initialize SQLite database
 const db = new sqlite3.Database('./trading.db');
+
+// Store active market making bots
+const activeBots = new Map();
 
 // Create tables
 const initDatabase = () => {
@@ -99,6 +103,67 @@ const initDatabase = () => {
                 locked REAL DEFAULT 0,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        `);
+
+        // Market Making Sessions table
+        db.run(`
+            CREATE TABLE IF NOT EXISTS market_making_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT UNIQUE NOT NULL,
+                user_id INTEGER NOT NULL,
+                exchange TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                spread_percentage REAL NOT NULL,
+                total_amount REAL NOT NULL,
+                reference_source TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                total_clusters INTEGER DEFAULT 0,
+                total_fills INTEGER DEFAULT 0,
+                total_pnl REAL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                stopped_at DATETIME,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        `);
+
+        // Market Making Clusters table
+        db.run(`
+            CREATE TABLE IF NOT EXISTS mm_clusters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                cluster_number INTEGER NOT NULL,
+                mid_price REAL NOT NULL,
+                buy_price REAL NOT NULL,
+                buy_quantity REAL NOT NULL,
+                buy_filled REAL DEFAULT 0,
+                buy_status TEXT DEFAULT 'open',
+                sell_price REAL NOT NULL,
+                sell_quantity REAL NOT NULL,
+                sell_filled REAL DEFAULT 0,
+                sell_status TEXT DEFAULT 'open',
+                spread_percentage REAL NOT NULL,
+                total_amount REAL NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_checked DATETIME,
+                FOREIGN KEY (session_id) REFERENCES market_making_sessions(session_id)
+            )
+        `);
+
+        // Market Making specific API keys table
+        db.run(`
+            CREATE TABLE IF NOT EXISTS mm_api_credentials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                exchange TEXT NOT NULL,
+                api_key_encrypted TEXT NOT NULL,
+                api_secret_encrypted TEXT NOT NULL,
+                api_memo TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE(user_id, exchange)
             )
         `);
 
@@ -677,22 +742,289 @@ app.get('/api/v1/trading/balances', verifyToken, async (req, res) => {
     }
 });
 
-// Market Making
-app.post('/api/v1/market-making/start', verifyToken, (req, res) => {
-    const { exchange, symbol, spreadPercentage, numberOfOrders, referenceSource } = req.body;
+// Market Making API Keys management
+app.post('/api/v1/mm/api-keys', verifyToken, (req, res) => {
+    const { exchange, apiKey, apiSecret, apiMemo } = req.body;
 
-    res.json({
-        success: true,
-        sessionId: Math.random().toString(36).substring(7),
-        message: 'Market making session started',
-        config: {
-            exchange,
-            symbol,
-            spreadPercentage,
-            numberOfOrders,
-            referenceSource
+    // Validate exchange
+    const validExchanges = ['bingx', 'bitmart', 'ascendx', 'gateio', 'mexc'];
+    if (!exchange || !validExchanges.includes(exchange.toLowerCase())) {
+        return res.status(400).json({ error: 'Invalid exchange. Must be one of: ' + validExchanges.join(', ') });
+    }
+
+    if (!apiKey || !apiSecret) {
+        return res.status(400).json({ error: 'API key and secret are required' });
+    }
+
+    // Encrypt the credentials
+    const encryptedKey = encrypt(apiKey);
+    const encryptedSecret = encrypt(apiSecret);
+    const encryptedMemo = apiMemo ? encrypt(apiMemo) : null;
+
+    db.run(
+        'INSERT OR REPLACE INTO mm_api_credentials (user_id, exchange, api_key_encrypted, api_secret_encrypted, api_memo, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+        [req.userId, exchange.toLowerCase(), encryptedKey, encryptedSecret, encryptedMemo],
+        function(err) {
+            if (err) {
+                console.error('Database error:', err);
+                return res.status(500).json({ error: 'Failed to save MM API keys: ' + err.message });
+            }
+            res.json({
+                success: true,
+                message: `Market Making API keys for ${exchange} saved successfully`,
+                exchange: exchange.toLowerCase()
+            });
         }
-    });
+    );
+});
+
+app.get('/api/v1/mm/api-keys', verifyToken, (req, res) => {
+    db.all(
+        'SELECT id, exchange, created_at, updated_at FROM mm_api_credentials WHERE user_id = ?',
+        [req.userId],
+        (err, keys) => {
+            if (err) {
+                return res.status(500).json({ error: 'Failed to fetch MM API keys' });
+            }
+            res.json(keys || []);
+        }
+    );
+});
+
+// Get API keys for a specific exchange
+app.get('/api/v1/mm/api-keys/:exchange', verifyToken, (req, res) => {
+    const { exchange } = req.params;
+
+    db.get(
+        'SELECT id, exchange, created_at, updated_at FROM mm_api_credentials WHERE user_id = ? AND exchange = ?',
+        [req.userId, exchange.toLowerCase()],
+        (err, keys) => {
+            if (err) {
+                return res.status(500).json({ error: 'Failed to fetch MM API key' });
+            }
+            if (!keys) {
+                return res.status(404).json({ error: `No MM API keys found for ${exchange}` });
+            }
+            res.json(keys);
+        }
+    );
+});
+
+// Delete MM API key endpoint
+app.delete('/api/v1/mm/api-keys/:exchange', verifyToken, (req, res) => {
+    const { exchange } = req.params;
+
+    db.run(
+        'DELETE FROM mm_api_credentials WHERE user_id = ? AND exchange = ?',
+        [req.userId, exchange.toLowerCase()],
+        function(err) {
+            if (err) {
+                return res.status(500).json({ error: 'Failed to delete MM API key' });
+            }
+            if (this.changes === 0) {
+                return res.status(404).json({ error: 'MM API key not found for this exchange' });
+            }
+            res.json({ success: true, message: `MM API key for ${exchange} deleted successfully` });
+        }
+    );
+});
+
+// Market Making - Start Session
+app.post('/api/v1/market-making/start', verifyToken, async (req, res) => {
+    const { exchange, symbol, spreadPercentage, totalAmount, referenceSource } = req.body;
+
+    // Validation
+    if (!exchange || !symbol || !spreadPercentage || !totalAmount || !referenceSource) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    if (totalAmount <= 0) {
+        return res.status(400).json({ error: 'Total amount must be greater than 0' });
+    }
+
+    try {
+        // Get MM-specific API credentials
+        db.get(
+            'SELECT api_key_encrypted, api_secret_encrypted, api_memo FROM mm_api_credentials WHERE user_id = ? AND exchange = ?',
+            [req.userId, exchange.toLowerCase()],
+            async (err, credentials) => {
+                if (err || !credentials) {
+                    return res.status(404).json({ error: `No Market Making API keys found for ${exchange}. Please add your MM API keys first.` });
+                }
+
+                try {
+                    // Decrypt credentials
+                    const apiKey = decrypt(credentials.api_key_encrypted);
+                    const apiSecret = decrypt(credentials.api_secret_encrypted);
+                    const apiMemo = credentials.api_memo ? decrypt(credentials.api_memo) : null;
+
+                    // Generate session ID
+                    const sessionId = crypto.randomBytes(16).toString('hex');
+
+                    // Create bot config
+                    const botConfig = {
+                        sessionId,
+                        exchange: exchange.toLowerCase(),
+                        symbol,
+                        spreadPercentage: parseFloat(spreadPercentage),
+                        totalAmount: parseFloat(totalAmount),
+                        referenceSource
+                    };
+
+                    // Save session to database
+                    db.run(
+                        `INSERT INTO market_making_sessions
+                        (session_id, user_id, exchange, symbol, spread_percentage, total_amount, reference_source, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [sessionId, req.userId, botConfig.exchange, symbol, botConfig.spreadPercentage,
+                         botConfig.totalAmount, referenceSource, 'starting'],
+                        async (dbErr) => {
+                            if (dbErr) {
+                                console.error('Failed to save session:', dbErr);
+                                return res.status(500).json({ error: 'Failed to create session' });
+                            }
+
+                            try {
+                                // Create and start bot
+                                const bot = new MarketMakingBot(botConfig, db, req.userId);
+                                await bot.start(apiKey, apiSecret, apiMemo);
+
+                                // Store bot instance
+                                activeBots.set(sessionId, bot);
+
+                                res.json({
+                                    success: true,
+                                    sessionId: sessionId,
+                                    message: 'Market making started successfully',
+                                    config: botConfig
+                                });
+                            } catch (startError) {
+                                console.error('Failed to start bot:', startError);
+                                res.status(500).json({ error: `Failed to start market making: ${startError.message}` });
+                            }
+                        }
+                    );
+
+                } catch (error) {
+                    console.error('Error in market making start:', error);
+                    res.status(500).json({ error: `Failed to start market making: ${error.message}` });
+                }
+            }
+        );
+    } catch (error) {
+        console.error('Error in market making endpoint:', error);
+        res.status(500).json({ error: 'Failed to start market making' });
+    }
+});
+
+// Market Making - Stop Session
+app.post('/api/v1/market-making/stop', verifyToken, async (req, res) => {
+    const { sessionId } = req.body;
+
+    if (!sessionId) {
+        return res.status(400).json({ error: 'Session ID required' });
+    }
+
+    try {
+        // Check if bot exists
+        const bot = activeBots.get(sessionId);
+        if (!bot) {
+            return res.status(404).json({ error: 'Session not found or already stopped' });
+        }
+
+        // Verify ownership
+        if (bot.userId !== req.userId) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        // Stop the bot
+        await bot.stop();
+
+        // Remove from active bots
+        activeBots.delete(sessionId);
+
+        res.json({
+            success: true,
+            message: 'Market making stopped successfully'
+        });
+    } catch (error) {
+        console.error('Error stopping market making:', error);
+        res.status(500).json({ error: `Failed to stop market making: ${error.message}` });
+    }
+});
+
+// Market Making - Get All Sessions
+app.get('/api/v1/market-making/sessions', verifyToken, (req, res) => {
+    db.all(
+        `SELECT session_id, exchange, symbol, spread_percentage, total_amount,
+                reference_source, status, total_clusters, total_fills, total_pnl, created_at, stopped_at
+         FROM market_making_sessions
+         WHERE user_id = ?
+         ORDER BY created_at DESC
+         LIMIT 50`,
+        [req.userId],
+        (err, sessions) => {
+            if (err) {
+                console.error('Failed to fetch sessions:', err);
+                return res.status(500).json({ error: 'Failed to fetch sessions' });
+            }
+
+            // Add isActive flag
+            const sessionsWithStatus = sessions.map(session => ({
+                ...session,
+                isActive: activeBots.has(session.session_id)
+            }));
+
+            res.json(sessionsWithStatus || []);
+        }
+    );
+});
+
+// Market Making - Get Session Status
+app.get('/api/v1/market-making/sessions/:sessionId', verifyToken, (req, res) => {
+    const { sessionId } = req.params;
+
+    // Check if bot is running
+    const bot = activeBots.get(sessionId);
+
+    if (bot) {
+        // Get live status
+        const status = bot.getStatus();
+        return res.json(status);
+    }
+
+    // Get from database
+    db.get(
+        `SELECT * FROM market_making_sessions WHERE session_id = ? AND user_id = ?`,
+        [sessionId, req.userId],
+        (err, session) => {
+            if (err || !session) {
+                return res.status(404).json({ error: 'Session not found' });
+            }
+            res.json({ ...session, isActive: false });
+        }
+    );
+});
+
+// Market Making - Get Session Clusters
+app.get('/api/v1/market-making/sessions/:sessionId/clusters', verifyToken, (req, res) => {
+    const { sessionId } = req.params;
+
+    db.all(
+        `SELECT mc.* FROM mm_clusters mc
+         JOIN market_making_sessions mms ON mc.session_id = mms.session_id
+         WHERE mc.session_id = ? AND mms.user_id = ?
+         ORDER BY mc.created_at DESC
+         LIMIT 100`,
+        [sessionId, req.userId],
+        (err, clusters) => {
+            if (err) {
+                console.error('Failed to fetch MM clusters:', err);
+                return res.status(500).json({ error: 'Failed to fetch clusters' });
+            }
+            res.json(clusters || []);
+        }
+    );
 });
 
 // Start server
