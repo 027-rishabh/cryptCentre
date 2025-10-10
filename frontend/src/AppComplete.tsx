@@ -393,18 +393,28 @@ function AppComplete() {
     return () => clearInterval(interval)
   }, [selectedExchange, selectedPair])
 
+  // Fetch data based on active tab to prevent rate limiting
   useEffect(() => {
-    if (token) {
-      fetchOrders()
-      fetchBalances()
-      fetchOpenOrders()
-    } else {
-      // Clear orders and balances when not logged in
+    if (!token) {
+      // Clear all data when not logged in
       setOrders([])
       setBalances([])
       setOpenOrders([])
+      return
     }
-  }, [token, selectedExchange, selectedPair, apiKeys])
+
+    // Only fetch data for the currently active tab
+    if (tabValue === 0) {
+      // Limit Orders tab - fetch open orders only
+      fetchOpenOrders()
+    } else if (tabValue === 2) {
+      // Order History tab - fetch order history only when tab is active
+      fetchOrders()
+    } else if (tabValue === 3) {
+      // Balances tab - fetch balances only when tab is active
+      fetchBalances()
+    }
+  }, [token, selectedExchange, selectedPair, tabValue, apiKeys])
 
   // Save selectedExchange to localStorage when it changes
   useEffect(() => {
@@ -596,7 +606,7 @@ function AppComplete() {
   return (
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
-      <Box sx={{ flexGrow: 1 }}>
+      <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', width: '100%', margin: 0, padding: 0 }}>
         {/* Header */}
         <AppBar position="static" sx={{ background: '#1a1a1a' }}>
           <Toolbar>
@@ -677,7 +687,7 @@ function AppComplete() {
           </Toolbar>
         </AppBar>
 
-        <Container maxWidth={false} sx={{ mt: 3, px: 3 }}>
+        <Container maxWidth={false} sx={{ mt: 0, px: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
           {/* Alert for non-logged in users */}
           {!user && (
             <Alert severity="info" sx={{ mb: 3 }}>
@@ -692,7 +702,7 @@ function AppComplete() {
           )}
 
           {/* Price Display Cards */}
-          <Grid container spacing={3} sx={{ mb: 3 }}>
+          <Grid container spacing={2} sx={{ mb: 2, px: 2, pt: 2 }}>
             <Grid item xs={12} md={6}>
               <Card>
                 <CardContent>
@@ -773,10 +783,10 @@ function AppComplete() {
           {/* Main Trading Interface */}
           <Paper sx={{
             p: 2,
-            height: 'calc(100vh - 350px)',
-            minHeight: '600px',
-            width: '100%',
-            maxWidth: '100%',
+            flex: 1,
+            mx: 2,
+            mb: 2,
+            width: 'calc(100% - 32px)',
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column'
@@ -1073,9 +1083,20 @@ function AppComplete() {
             {/* Order History Tab */}
             <TabPanel value={tabValue} index={2}>
               <Paper sx={{ p: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  Order History for {selectedExchange.toUpperCase()}
-                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h6">
+                    Order History for {selectedExchange.toUpperCase()}
+                  </Typography>
+                  {user && hasApiKeysForSelectedExchange() && (
+                    <IconButton
+                      color="primary"
+                      onClick={fetchOrders}
+                      title="Refresh Order History"
+                    >
+                      <Refresh />
+                    </IconButton>
+                  )}
+                </Box>
                 {!user ? (
                   <Alert severity="info">Login to view your order history</Alert>
                 ) : !hasApiKeysForSelectedExchange() ? (
