@@ -55,6 +55,7 @@ import {
   Visibility,
   VisibilityOff,
   AccountCircle,
+  Stop,
 } from '@mui/icons-material'
 import axios from 'axios'
 
@@ -182,6 +183,9 @@ function AppComplete() {
     apiSecret: '',
     apiMemo: '',
   })
+
+  // MM Sessions state
+  const [mmSessions, setMmSessions] = useState<any[]>([])
 
   // Order Form State
   const [orderForm, setOrderForm] = useState({
@@ -420,8 +424,9 @@ function AppComplete() {
       fetchOpenOrders()
       fetchBalances()
     } else if (tabValue === 1) {
-      // Market Making tab - fetch balances for MM
+      // Market Making tab - fetch balances and MM sessions
       fetchBalances()
+      fetchMmSessions()
     } else if (tabValue === 2) {
       // Order History tab - fetch order history only when tab is active
       fetchOrders()
@@ -517,6 +522,17 @@ function AppComplete() {
       setMmApiKeys(response.data)
     } catch (error) {
       console.error('Failed to fetch MM API keys:', error)
+    }
+  }
+
+  // Fetch MM Sessions
+  const fetchMmSessions = async () => {
+    if (!token) return
+    try {
+      const response = await axios.get('http://localhost:8080/api/v1/market-making/sessions')
+      setMmSessions(response.data)
+    } catch (error) {
+      console.error('Failed to fetch MM sessions:', error)
     }
   }
 
@@ -625,8 +641,37 @@ function AppComplete() {
       })
 
       setSnackbar({ open: true, message: `Market making started! Session ID: ${response.data.sessionId}`, severity: 'success' })
+      // Refresh MM sessions to show the new session
+      fetchMmSessions()
     } catch (error: any) {
       setSnackbar({ open: true, message: error.response?.data?.error || 'Failed to start market making', severity: 'error' })
+    }
+  }
+
+  // Handle stop market making
+  const handleStopMarketMaking = async (sessionId: string) => {
+    try {
+      await axios.post('http://localhost:8080/api/v1/market-making/stop', { sessionId })
+      setSnackbar({ open: true, message: 'Market making stopped successfully!', severity: 'success' })
+      // Refresh MM sessions
+      fetchMmSessions()
+    } catch (error: any) {
+      setSnackbar({ open: true, message: error.response?.data?.error || 'Failed to stop market making', severity: 'error' })
+    }
+  }
+
+  // Handle delete market making session
+  const handleDeleteMarketMakingSession = async (sessionId: string) => {
+    const confirmDelete = window.confirm('Are you sure you want to delete this market making session? This will remove all session data including order history.')
+    if (!confirmDelete) return
+
+    try {
+      await axios.delete(`http://localhost:8080/api/v1/market-making/sessions/${sessionId}`)
+      setSnackbar({ open: true, message: 'Session deleted successfully!', severity: 'success' })
+      // Refresh MM sessions
+      fetchMmSessions()
+    } catch (error: any) {
+      setSnackbar({ open: true, message: error.response?.data?.error || 'Failed to delete session', severity: 'error' })
     }
   }
 
@@ -1208,10 +1253,73 @@ function AppComplete() {
                 </Grid>
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 3 }}>
-                    <Typography variant="h6" gutterBottom>
-                      Active Sessions
-                    </Typography>
-                    <Alert severity="info">No active market making sessions</Alert>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography variant="h6">
+                        Market Making Sessions
+                      </Typography>
+                      <IconButton color="primary" onClick={fetchMmSessions} title="Refresh Sessions">
+                        <Refresh />
+                      </IconButton>
+                    </Box>
+                    {!user ? (
+                      <Alert severity="info">Login to view market making sessions</Alert>
+                    ) : mmSessions.length === 0 ? (
+                      <Alert severity="info">No market making sessions yet. Start one to see it here!</Alert>
+                    ) : (
+                      <TableContainer>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Exchange</TableCell>
+                              <TableCell>Pair</TableCell>
+                              <TableCell>Spread</TableCell>
+                              <TableCell>Amount</TableCell>
+                              <TableCell>Status</TableCell>
+                              <TableCell align="center">Actions</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {mmSessions.map((session, index) => (
+                              <TableRow key={index}>
+                                <TableCell>{session.exchange.toUpperCase()}</TableCell>
+                                <TableCell>{session.symbol}</TableCell>
+                                <TableCell>{session.spread_percentage}%</TableCell>
+                                <TableCell>${session.total_amount}</TableCell>
+                                <TableCell>
+                                  <Chip
+                                    label={session.isActive ? 'Active' : session.status}
+                                    size="small"
+                                    color={session.isActive ? 'success' : session.status === 'stopped' ? 'default' : 'error'}
+                                  />
+                                </TableCell>
+                                <TableCell align="center">
+                                  <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                                    {(session.isActive || session.status === 'running') && (
+                                      <IconButton
+                                        size="small"
+                                        color="error"
+                                        onClick={() => handleStopMarketMaking(session.session_id)}
+                                        title="Stop Market Making"
+                                      >
+                                        <Stop fontSize="small" />
+                                      </IconButton>
+                                    )}
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      onClick={() => handleDeleteMarketMakingSession(session.session_id)}
+                                      title="Delete Session"
+                                    >
+                                      <Delete fontSize="small" />
+                                    </IconButton>
+                                  </Box>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    )}
                   </Paper>
                 </Grid>
               </Grid>

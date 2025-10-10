@@ -8,6 +8,9 @@ A full-stack cryptocurrency trading platform with automated market making capabi
 - **Real-time Market Data**: Live price feeds and order book data
 - **Limit Order Trading**: Place buy/sell orders with real-time execution
 - **Automated Market Making**: Cluster-based market making strategy with configurable spread
+- **Session Persistence**: Auto-resume active market making sessions on server restart
+- **Graceful Shutdown**: Properly stops all bots and cancels orders on server shutdown
+- **Session Management**: Delete market making sessions with full cleanup
 - **Secure API Key Management**: Encrypted storage of exchange API credentials
 - **Real-time Updates**: WebSocket integration for live price updates
 - **User Authentication**: Secure JWT-based authentication system
@@ -36,6 +39,8 @@ A full-stack cryptocurrency trading platform with automated market making capabi
 - **Configurable spread**: Customize spread percentage from mid price
 - **Fill detection**: Every 5 seconds check for filled orders
 - **Price monitoring**: Refresh orders on significant price movement
+- **Auto-resume**: Automatically restarts active sessions on server restart
+- **Graceful shutdown**: Cleanly stops all bots and cancels orders on server shutdown
 
 ## Prerequisites
 
@@ -273,6 +278,22 @@ pm2 monit
 pm2 restart crypto-backend
 ```
 
+### 11. Session Persistence on VPS
+
+The platform automatically resumes active market making sessions when the server restarts:
+
+- **Automatic Resume**: On startup, the server queries the database for sessions with status 'running' or 'starting' and automatically restarts them
+- **Graceful Shutdown**: When stopping the server with `pm2 stop` or `pm2 restart`, all active bots cleanly stop and cancel their orders
+- **Crash Recovery**: If the server crashes unexpectedly, active sessions will be automatically resumed on the next startup
+
+```bash
+# Safely restart the backend (sessions will be preserved)
+pm2 restart crypto-backend
+
+# View session resume logs
+pm2 logs crypto-backend | grep -i "resume"
+```
+
 ## Using the Platform
 
 ### 1. Register an Account
@@ -311,6 +332,13 @@ pm2 restart crypto-backend
    - **Reference Source**: CEX or DEX price
 3. Click "Start Market Making"
 4. Monitor active sessions
+
+### 5. Manage Market Making Sessions
+
+1. View all sessions in the **Market Making** tab
+2. **Stop** an active session using the stop button
+3. **Delete** a session (stopped or active) using the delete button
+4. Sessions are automatically resumed if server restarts while they're active
 
 ## Market Making Configuration
 
@@ -413,6 +441,7 @@ npm run build
 ### Market Making
 - `POST /api/v1/market-making/start` - Start MM session
 - `POST /api/v1/market-making/stop` - Stop MM session
+- `DELETE /api/v1/market-making/sessions/:sessionId` - Delete MM session
 - `GET /api/v1/market-making/sessions` - Get all sessions
 - `GET /api/v1/market-making/sessions/:sessionId` - Get session details
 

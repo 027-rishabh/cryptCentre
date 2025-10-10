@@ -174,6 +174,132 @@ const initDatabase = () => {
 // Initialize database
 initDatabase();
 
+// Auto-resume market making sessions on server restart
+const resumeActiveSessions = async () => {
+    console.log('🔄 Checking for active market making sessions to resume...');
+
+    db.all(
+        `SELECT session_id, user_id, exchange, symbol, spread_percentage, total_amount, reference_source
+         FROM market_making_sessions
+         WHERE status = 'running' OR status = 'starting'
+         ORDER BY created_at ASC`,
+        [],
+        async (err, sessions) => {
+            if (err) {
+                console.error('Failed to fetch active sessions:', err);
+                return;
+            }
+
+            if (!sessions || sessions.length === 0) {
+                console.log('✅ No active sessions to resume');
+                return;
+            }
+
+            console.log(`📊 Found ${sessions.length} active session(s) to resume`);
+
+            for (const session of sessions) {
+                try {
+                    console.log(`🔄 Resuming session ${session.session_id} for ${session.symbol} on ${session.exchange}`);
+
+                    // Get MM API credentials
+                    const credentials = await new Promise((resolve, reject) => {
+                        db.get(
+                            'SELECT api_key_encrypted, api_secret_encrypted, api_memo FROM mm_api_credentials WHERE user_id = ? AND exchange = ?',
+                            [session.user_id, session.exchange.toLowerCase()],
+                            (err, creds) => {
+                                if (err || !creds) reject(new Error('No MM API keys found'));
+                                else resolve(creds);
+                            }
+                        );
+                    });
+
+                    // Decrypt credentials
+                    const apiKey = decrypt(credentials.api_key_encrypted);
+                    const apiSecret = decrypt(credentials.api_secret_encrypted);
+                    const apiMemo = credentials.api_memo ? decrypt(credentials.api_memo) : null;
+
+                    // Create bot config
+                    const botConfig = {
+                        sessionId: session.session_id,
+                        exchange: session.exchange,
+                        symbol: session.symbol,
+                        spreadPercentage: parseFloat(session.spread_percentage),
+                        totalAmount: parseFloat(session.total_amount),
+                        referenceSource: session.reference_source
+                    };
+
+                    // Create and start bot
+                    const bot = new MarketMakingBot(botConfig, db, session.user_id);
+                    await bot.start(apiKey, apiSecret, apiMemo);
+
+                    // Store bot instance
+                    activeBots.set(session.session_id, bot);
+
+                    console.log(`✅ Successfully resumed session ${session.session_id}`);
+
+                } catch (error) {
+                    console.error(`❌ Failed to resume session ${session.session_id}:`, error.message);
+
+                    // Update session status to failed
+                    db.run(
+                        `UPDATE market_making_sessions SET status = 'failed', error_message = ? WHERE session_id = ?`,
+                        [`Auto-resume failed: ${error.message}`, session.session_id],
+                        (err) => {
+                            if (err) console.error(`Failed to update session status:`, err);
+                        }
+                    );
+                }
+            }
+
+            console.log(`✅ Session resume complete. ${activeBots.size} session(s) running`);
+        }
+    );
+};
+
+// Graceful shutdown handler
+const gracefulShutdown = async (signal) => {
+    console.log(`\n⚠️  Received ${signal}. Starting graceful shutdown...`);
+
+    if (activeBots.size > 0) {
+        console.log(`🛑 Stopping ${activeBots.size} active market making bot(s)...`);
+
+        const stopPromises = [];
+        for (const [sessionId, bot] of activeBots.entries()) {
+            console.log(`   Stopping session ${sessionId}...`);
+            stopPromises.push(
+                bot.stop().catch(err => {
+                    console.error(`   Failed to stop session ${sessionId}:`, err.message);
+                })
+            );
+        }
+
+        await Promise.allSettled(stopPromises);
+        console.log('✅ All bots stopped');
+    }
+
+    // Close database
+    db.close((err) => {
+        if (err) console.error('Error closing database:', err);
+        else console.log('✅ Database closed');
+    });
+
+    // Close server
+    server.close(() => {
+        console.log('✅ Server closed');
+        process.exit(0);
+    });
+
+    // Force exit after 10 seconds
+    setTimeout(() => {
+        console.error('⚠️  Forced shutdown after timeout');
+        process.exit(1);
+    }, 10000);
+};
+
+// Register shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Helper functions
 const generateToken = (userId) => {
     return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '24h' });
@@ -953,6 +1079,82 @@ app.post('/api/v1/market-making/stop', verifyToken, async (req, res) => {
     }
 });
 
+// Market Making - Delete Session
+app.delete('/api/v1/market-making/sessions/:sessionId', verifyToken, async (req, res) => {
+    const { sessionId } = req.params;
+
+    if (!sessionId) {
+        return res.status(400).json({ error: 'Session ID required' });
+    }
+
+    try {
+        // First, check if session exists and belongs to user
+        db.get(
+            `SELECT session_id, status FROM market_making_sessions WHERE session_id = ? AND user_id = ?`,
+            [sessionId, req.userId],
+            async (err, session) => {
+                if (err) {
+                    console.error('Database error:', err);
+                    return res.status(500).json({ error: 'Database error' });
+                }
+
+                if (!session) {
+                    return res.status(404).json({ error: 'Session not found' });
+                }
+
+                // Check if bot is still running
+                const bot = activeBots.get(sessionId);
+                if (bot) {
+                    // Stop the bot first
+                    try {
+                        await bot.stop();
+                        activeBots.delete(sessionId);
+                    } catch (stopError) {
+                        console.error('Error stopping bot:', stopError);
+                        return res.status(500).json({ error: 'Failed to stop active session' });
+                    }
+                }
+
+                // Delete related clusters first (foreign key constraint)
+                db.run(
+                    `DELETE FROM mm_clusters WHERE session_id = ?`,
+                    [sessionId],
+                    (clusterErr) => {
+                        if (clusterErr) {
+                            console.error('Failed to delete clusters:', clusterErr);
+                            return res.status(500).json({ error: 'Failed to delete session data' });
+                        }
+
+                        // Now delete the session
+                        db.run(
+                            `DELETE FROM market_making_sessions WHERE session_id = ? AND user_id = ?`,
+                            [sessionId, req.userId],
+                            function(sessionErr) {
+                                if (sessionErr) {
+                                    console.error('Failed to delete session:', sessionErr);
+                                    return res.status(500).json({ error: 'Failed to delete session' });
+                                }
+
+                                if (this.changes === 0) {
+                                    return res.status(404).json({ error: 'Session not found' });
+                                }
+
+                                res.json({
+                                    success: true,
+                                    message: 'Session deleted successfully'
+                                });
+                            }
+                        );
+                    }
+                );
+            }
+        );
+    } catch (error) {
+        console.error('Error deleting session:', error);
+        res.status(500).json({ error: `Failed to delete session: ${error.message}` });
+    }
+});
+
 // Market Making - Get All Sessions
 app.get('/api/v1/market-making/sessions', verifyToken, (req, res) => {
     db.all(
@@ -1031,6 +1233,11 @@ app.get('/api/v1/market-making/sessions/:sessionId/clusters', verifyToken, (req,
 const server = app.listen(PORT, () => {
     console.log(`✅ Backend server running on http://localhost:${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/api/v1/health`);
+
+    // Resume active market making sessions after server starts
+    setTimeout(() => {
+        resumeActiveSessions();
+    }, 1000); // Wait 1 second for server to fully initialize
 });
 
 // WebSocket server for real-time updates
