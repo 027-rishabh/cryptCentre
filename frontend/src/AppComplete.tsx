@@ -420,17 +420,20 @@ function AppComplete() {
 
     // Only fetch data for the currently active tab
     if (tabValue === 0) {
-      // Limit Orders tab - fetch open orders and balances
-      fetchOpenOrders()
+      // Limit Orders tab - fetch balances
       fetchBalances()
     } else if (tabValue === 1) {
+      // Open Orders tab - fetch open orders and balances
+      fetchOpenOrders()
+      fetchBalances()
+    } else if (tabValue === 2) {
       // Market Making tab - fetch balances and MM sessions
       fetchBalances()
       fetchMmSessions()
-    } else if (tabValue === 2) {
+    } else if (tabValue === 3) {
       // Order History tab - fetch order history only when tab is active
       fetchOrders()
-    } else if (tabValue === 3) {
+    } else if (tabValue === 4) {
       // Balances tab - fetch balances only when tab is active
       fetchBalances()
     }
@@ -896,6 +899,7 @@ function AppComplete() {
           }}>
             <Tabs value={tabValue} onChange={handleTabChange}>
               <Tab label="Limit Orders" />
+              <Tab label="Open Orders" />
               <Tab label="Market Making" />
               <Tab label="Order History" />
               <Tab label="Balances" />
@@ -904,7 +908,7 @@ function AppComplete() {
             {/* Limit Orders Tab */}
             <TabPanel value={tabValue} index={0}>
               <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
+                <Grid item xs={12} md={8}>
                   <Paper sx={{ p: 3 }}>
                     <Typography variant="h6" gutterBottom>
                       Place Order
@@ -1035,19 +1039,52 @@ function AppComplete() {
                     </Button>
                   </Paper>
                 </Grid>
+              </Grid>
+            </TabPanel>
+
+            {/* Open Orders Tab */}
+            <TabPanel value={tabValue} index={1}>
+              <Grid container spacing={3}>
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 3 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                       <Typography variant="h6">
-                        Open Orders ({selectedPair})
+                        Buy Orders ({selectedPair})
                       </Typography>
-                      {user && hasApiKeysForSelectedExchange() && openOrders.length > 0 && (
+                      {user && hasApiKeysForSelectedExchange() && openOrders.filter(o => o.side === 'BUY').length > 0 && (
                         <Button
                           variant="outlined"
-                          color="error"
+                          color="success"
                           size="small"
                           startIcon={<DeleteSweep />}
-                          onClick={handleCancelAllOrders}
+                          onClick={async () => {
+                            const buyOrders = openOrders.filter(o => o.side === 'BUY');
+                            const confirmCancel = window.confirm(`Are you sure you want to cancel all ${buyOrders.length} buy orders for ${selectedPair}?`);
+                            if (!confirmCancel) return;
+                            setLoading(true);
+                            let successCount = 0;
+                            let failCount = 0;
+                            for (const order of buyOrders) {
+                              try {
+                                await axios.delete(`http://localhost:8080/api/v1/orders/${order.id}?exchange=${selectedExchange}&symbol=${selectedPair}`);
+                                successCount++;
+                              } catch (error) {
+                                console.error(`Failed to cancel order ${order.id}:`, error);
+                                failCount++;
+                              }
+                            }
+                            if (failCount === 0) {
+                              setSnackbar({ open: true, message: `Successfully cancelled all ${successCount} buy orders!`, severity: 'success' });
+                            } else if (successCount > 0) {
+                              setSnackbar({ open: true, message: `Cancelled ${successCount} orders, ${failCount} failed`, severity: 'warning' });
+                            } else {
+                              setSnackbar({ open: true, message: 'Failed to cancel all orders', severity: 'error' });
+                            }
+                            fetchOpenOrders();
+                            fetchOrders();
+                            fetchBalances();
+                            setLoading(false);
+                          }}
                           disabled={loading}
                         >
                           Cancel All
@@ -1065,45 +1102,134 @@ function AppComplete() {
                         <Table size="small" sx={{ tableLayout: 'fixed', width: '100%' }}>
                           <TableHead>
                             <TableRow>
-                              <TableCell sx={{ width: '18%' }}>Side</TableCell>
-                              <TableCell align="right" sx={{ width: '30%' }}>Price</TableCell>
-                              <TableCell align="right" sx={{ width: '20%' }}>Qty</TableCell>
-                              <TableCell align="right" sx={{ width: '22%' }}>Filled</TableCell>
-                              <TableCell align="center" sx={{ width: '10%' }}>Act</TableCell>
+                              <TableCell align="right" sx={{ width: '35%' }}>Price</TableCell>
+                              <TableCell align="right" sx={{ width: '25%' }}>Quantity</TableCell>
+                              <TableCell align="right" sx={{ width: '25%' }}>Filled</TableCell>
+                              <TableCell align="center" sx={{ width: '15%' }}>Action</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
-                            {openOrders.length === 0 ? (
+                            {openOrders.filter(o => o.side === 'BUY').length === 0 ? (
                               <TableRow>
-                                <TableCell colSpan={5} align="center">
-                                  No open orders for {selectedPair}
+                                <TableCell colSpan={4} align="center">
+                                  No buy orders for {selectedPair}
                                 </TableCell>
                               </TableRow>
                             ) : (
-                              openOrders.map((order, index) => (
+                              openOrders.filter(o => o.side === 'BUY').map((order, index) => (
                                 <TableRow
                                   key={index}
-                                  sx={{
-                                    bgcolor: order.side === 'SELL'
-                                      ? 'rgba(255, 68, 68, 0.1)'
-                                      : 'rgba(0, 255, 136, 0.1)'
-                                  }}
+                                  sx={{ bgcolor: 'rgba(0, 255, 136, 0.1)' }}
                                 >
-                                  <TableCell>
-                                    <Chip
-                                      label={order.side}
-                                      size="small"
-                                      sx={{
-                                        bgcolor: order.side === 'BUY' ? '#00ff88' : '#ff4444',
-                                        color: '#000',
-                                        fontWeight: 'bold',
-                                        fontSize: '0.75rem',
-                                        height: '22px'
-                                      }}
-                                    />
-                                  </TableCell>
                                   <TableCell align="right" sx={{
-                                    color: order.side === 'SELL' ? '#ff4444' : '#00ff88',
+                                    color: '#00ff88',
+                                    fontWeight: 'bold',
+                                    fontSize: '0.85rem'
+                                  }}>
+                                    {formatPrice(order.price)}
+                                  </TableCell>
+                                  <TableCell align="right" sx={{ fontSize: '0.85rem' }}>{order.quantity}</TableCell>
+                                  <TableCell align="right" sx={{ fontSize: '0.8rem' }}>
+                                    {order.filled || 0} ({((order.filled || 0) / order.quantity * 100).toFixed(0)}%)
+                                  </TableCell>
+                                  <TableCell align="center">
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      onClick={() => handleCancelOrder(order.id)}
+                                      title="Cancel Order"
+                                      sx={{ padding: '4px' }}
+                                    >
+                                      <Delete fontSize="small" />
+                                    </IconButton>
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                            )}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    )}
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Paper sx={{ p: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography variant="h6">
+                        Sell Orders ({selectedPair})
+                      </Typography>
+                      {user && hasApiKeysForSelectedExchange() && openOrders.filter(o => o.side === 'SELL').length > 0 && (
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          size="small"
+                          startIcon={<DeleteSweep />}
+                          onClick={async () => {
+                            const sellOrders = openOrders.filter(o => o.side === 'SELL');
+                            const confirmCancel = window.confirm(`Are you sure you want to cancel all ${sellOrders.length} sell orders for ${selectedPair}?`);
+                            if (!confirmCancel) return;
+                            setLoading(true);
+                            let successCount = 0;
+                            let failCount = 0;
+                            for (const order of sellOrders) {
+                              try {
+                                await axios.delete(`http://localhost:8080/api/v1/orders/${order.id}?exchange=${selectedExchange}&symbol=${selectedPair}`);
+                                successCount++;
+                              } catch (error) {
+                                console.error(`Failed to cancel order ${order.id}:`, error);
+                                failCount++;
+                              }
+                            }
+                            if (failCount === 0) {
+                              setSnackbar({ open: true, message: `Successfully cancelled all ${successCount} sell orders!`, severity: 'success' });
+                            } else if (successCount > 0) {
+                              setSnackbar({ open: true, message: `Cancelled ${successCount} orders, ${failCount} failed`, severity: 'warning' });
+                            } else {
+                              setSnackbar({ open: true, message: 'Failed to cancel all orders', severity: 'error' });
+                            }
+                            fetchOpenOrders();
+                            fetchOrders();
+                            fetchBalances();
+                            setLoading(false);
+                          }}
+                          disabled={loading}
+                        >
+                          Cancel All
+                        </Button>
+                      )}
+                    </Box>
+                    {!user ? (
+                      <Alert severity="info">Login to view your open orders</Alert>
+                    ) : !hasApiKeysForSelectedExchange() ? (
+                      <Alert severity="warning">
+                        Add API keys for {selectedExchange.toUpperCase()} to view open orders
+                      </Alert>
+                    ) : (
+                      <TableContainer sx={{ overflowX: 'visible' }}>
+                        <Table size="small" sx={{ tableLayout: 'fixed', width: '100%' }}>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell align="right" sx={{ width: '35%' }}>Price</TableCell>
+                              <TableCell align="right" sx={{ width: '25%' }}>Quantity</TableCell>
+                              <TableCell align="right" sx={{ width: '25%' }}>Filled</TableCell>
+                              <TableCell align="center" sx={{ width: '15%' }}>Action</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {openOrders.filter(o => o.side === 'SELL').length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={4} align="center">
+                                  No sell orders for {selectedPair}
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              openOrders.filter(o => o.side === 'SELL').map((order, index) => (
+                                <TableRow
+                                  key={index}
+                                  sx={{ bgcolor: 'rgba(255, 68, 68, 0.1)' }}
+                                >
+                                  <TableCell align="right" sx={{
+                                    color: '#ff4444',
                                     fontWeight: 'bold',
                                     fontSize: '0.85rem'
                                   }}>
@@ -1137,7 +1263,7 @@ function AppComplete() {
             </TabPanel>
 
             {/* Market Making Tab */}
-            <TabPanel value={tabValue} index={1}>
+            <TabPanel value={tabValue} index={2}>
               <Grid container spacing={3}>
                 <Grid item xs={12} md={5}>
                   <Paper sx={{ p: 3 }}>
@@ -1346,7 +1472,7 @@ function AppComplete() {
             </TabPanel>
 
             {/* Order History Tab */}
-            <TabPanel value={tabValue} index={2}>
+            <TabPanel value={tabValue} index={3}>
               <Paper sx={{ p: 3 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                   <Typography variant="h6">
@@ -1445,7 +1571,7 @@ function AppComplete() {
             </TabPanel>
 
             {/* Balances Tab */}
-            <TabPanel value={tabValue} index={3}>
+            <TabPanel value={tabValue} index={4}>
               <TableContainer component={Paper}>
                 <Table>
                   <TableHead>
