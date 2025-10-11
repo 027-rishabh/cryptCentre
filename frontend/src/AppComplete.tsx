@@ -1274,6 +1274,7 @@ function AppComplete() {
                               <TableCell>Pair</TableCell>
                               <TableCell>Spread</TableCell>
                               <TableCell>Amount</TableCell>
+                              <TableCell>Reference</TableCell>
                               <TableCell>Status</TableCell>
                               <TableCell align="center">Actions</TableCell>
                             </TableRow>
@@ -1285,6 +1286,17 @@ function AppComplete() {
                                 <TableCell>{session.symbol}</TableCell>
                                 <TableCell>{session.spread_percentage}%</TableCell>
                                 <TableCell>${session.total_amount}</TableCell>
+                                <TableCell>
+                                  <Chip
+                                    label={session.reference_source || 'CEX'}
+                                    size="small"
+                                    color={session.reference_source === 'DEX' ? 'warning' : 'info'}
+                                    sx={{
+                                      fontWeight: 'bold',
+                                      minWidth: '50px'
+                                    }}
+                                  />
+                                </TableCell>
                                 <TableCell>
                                   <Chip
                                     label={session.isActive ? 'Active' : session.status}
