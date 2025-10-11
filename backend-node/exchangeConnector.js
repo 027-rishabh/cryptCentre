@@ -10,7 +10,7 @@ const EXCHANGE_MAP = {
 };
 
 // Create exchange instance with API credentials
-export const createExchangeInstance = (exchangeName, apiKey, apiSecret, apiMemo = null) => {
+export const createExchangeInstance = async (exchangeName, apiKey, apiSecret, apiMemo = null) => {
   try {
     const ccxtExchangeName = EXCHANGE_MAP[exchangeName.toLowerCase()];
     if (!ccxtExchangeName) {
@@ -37,9 +37,11 @@ export const createExchangeInstance = (exchangeName, apiKey, apiSecret, apiMemo 
       if (ccxtExchangeName === 'bitmart') {
         config.uid = apiMemo;
       }
-      // AscendEX uses 'password' for account group (usually '0' or account ID)
+      // AscendEX: Don't use password, we'll fetch account group dynamically
+      // The apiMemo can be left empty for AscendEX
       else if (ccxtExchangeName === 'ascendex') {
-        config.password = apiMemo;
+        // AscendEX account group will be fetched after initialization
+        // Leave this empty for now
       }
       // Generic fallback for other exchanges that might need password
       else {
@@ -48,6 +50,37 @@ export const createExchangeInstance = (exchangeName, apiKey, apiSecret, apiMemo 
     }
 
     const exchange = new ExchangeClass(config);
+
+    // Special handling for AscendEX: fetch and set account group
+    if (ccxtExchangeName === 'ascendex') {
+      try {
+        console.log('[AscendEX] Fetching account group...');
+        await exchange.loadMarkets();
+
+        // Fetch account info to get the account group
+        const accountInfo = await exchange.privateGetInfo();
+
+        if (accountInfo && accountInfo.data && accountInfo.data.accountGroup) {
+          const accountGroup = accountInfo.data.accountGroup;
+          console.log(`[AscendEX] Account group retrieved: ${accountGroup}`);
+
+          // Set account group in exchange options
+          exchange.options['account-group'] = accountGroup;
+
+          // Also set it as a header for all requests
+          if (!exchange.headers) {
+            exchange.headers = {};
+          }
+          exchange.headers['x-auth-key'] = apiKey;
+        } else {
+          console.warn('[AscendEX] Could not retrieve account group from account info');
+        }
+      } catch (accountError) {
+        console.error('[AscendEX] Error fetching account group:', accountError.message);
+        // Continue anyway, some endpoints might still work
+      }
+    }
+
     return exchange;
   } catch (error) {
     console.error(`Error creating exchange instance for ${exchangeName}:`, error.message);

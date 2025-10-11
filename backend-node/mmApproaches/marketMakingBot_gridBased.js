@@ -48,7 +48,7 @@ class MarketMakingBot {
             console.log(`[MM Bot ${this.sessionId}] Starting market making for ${this.symbol} on ${this.exchange}`);
 
             // Create exchange instance
-            this.exchangeInstance = createExchangeInstance(this.exchange, apiKey, apiSecret, apiMemo);
+            this.exchangeInstance = await createExchangeInstance(this.exchange, apiKey, apiSecret, apiMemo);
 
             // Load markets to ensure symbol is valid
             await this.exchangeInstance.loadMarkets();

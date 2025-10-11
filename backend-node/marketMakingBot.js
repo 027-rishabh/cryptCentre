@@ -58,7 +58,7 @@ class MarketMakingBot {
             console.log(`[MM Bot ${this.sessionId}] Spread: ${this.spreadPercentage}%`);
 
             // Create exchange instance
-            this.exchangeInstance = createExchangeInstance(this.exchange, apiKey, apiSecret, apiMemo);
+            this.exchangeInstance = await createExchangeInstance(this.exchange, apiKey, apiSecret, apiMemo);
             await this.exchangeInstance.loadMarkets();
 
             // Validate symbol

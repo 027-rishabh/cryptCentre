@@ -631,7 +631,7 @@ app.post('/api/v1/orders/create', verifyToken, async (req, res) => {
                     const apiMemo = credentials.api_memo ? decrypt(credentials.api_memo) : null;
 
                     // Create exchange instance
-                    const exchangeInstance = createExchangeInstance(exchange, apiKey, apiSecret, apiMemo);
+                    const exchangeInstance = await createExchangeInstance(exchange, apiKey, apiSecret, apiMemo);
 
                     // Create real order on exchange
                     let order;
@@ -714,7 +714,7 @@ app.get('/api/v1/orders/history', verifyToken, async (req, res) => {
                     const apiMemo = credentials.api_memo ? decrypt(credentials.api_memo) : null;
 
                     // Create exchange instance
-                    const exchangeInstance = createExchangeInstance(exchange, apiKey, apiSecret, apiMemo);
+                    const exchangeInstance = await createExchangeInstance(exchange, apiKey, apiSecret, apiMemo);
 
                     // Fetch order history from exchange
                     const orders = await fetchOrderHistory(exchangeInstance, null, 100);
@@ -759,7 +759,7 @@ app.get('/api/v1/trading/open-orders', verifyToken, async (req, res) => {
                     const apiMemo = credentials.api_memo ? decrypt(credentials.api_memo) : null;
 
                     // Create exchange instance
-                    const exchangeInstance = createExchangeInstance(exchange, apiKey, apiSecret, apiMemo);
+                    const exchangeInstance = await createExchangeInstance(exchange, apiKey, apiSecret, apiMemo);
 
                     // Fetch open orders from exchange
                     const orders = await fetchOpenOrders(exchangeInstance, symbol || null);
@@ -803,7 +803,7 @@ app.delete('/api/v1/orders/:orderId', verifyToken, async (req, res) => {
                     const apiMemo = credentials.api_memo ? decrypt(credentials.api_memo) : null;
 
                     // Create exchange instance
-                    const exchangeInstance = createExchangeInstance(exchange, apiKey, apiSecret, apiMemo);
+                    const exchangeInstance = await createExchangeInstance(exchange, apiKey, apiSecret, apiMemo);
 
                     // Cancel order on exchange
                     const result = await cancelOrder(exchangeInstance, orderId, symbol);
@@ -850,7 +850,7 @@ app.get('/api/v1/trading/balances', verifyToken, async (req, res) => {
                     const apiMemo = credentials.api_memo ? decrypt(credentials.api_memo) : null;
 
                     // Create exchange instance with credentials
-                    const exchangeInstance = createExchangeInstance(exchange, apiKey, apiSecret, apiMemo);
+                    const exchangeInstance = await createExchangeInstance(exchange, apiKey, apiSecret, apiMemo);
 
                     // Fetch real balances
                     const balances = await fetchBalance(exchangeInstance);
