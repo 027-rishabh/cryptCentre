@@ -1061,15 +1061,15 @@ function AppComplete() {
                         Add API keys for {selectedExchange.toUpperCase()} to view open orders
                       </Alert>
                     ) : (
-                      <TableContainer>
-                        <Table size="small">
+                      <TableContainer sx={{ overflowX: 'visible' }}>
+                        <Table size="small" sx={{ tableLayout: 'fixed', width: '100%' }}>
                           <TableHead>
                             <TableRow>
-                              <TableCell>Side</TableCell>
-                              <TableCell align="right">Price</TableCell>
-                              <TableCell align="right">Qty</TableCell>
-                              <TableCell align="right">Filled</TableCell>
-                              <TableCell align="center">Action</TableCell>
+                              <TableCell sx={{ width: '18%' }}>Side</TableCell>
+                              <TableCell align="right" sx={{ width: '30%' }}>Price</TableCell>
+                              <TableCell align="right" sx={{ width: '20%' }}>Qty</TableCell>
+                              <TableCell align="right" sx={{ width: '22%' }}>Filled</TableCell>
+                              <TableCell align="center" sx={{ width: '10%' }}>Act</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -1096,19 +1096,22 @@ function AppComplete() {
                                       sx={{
                                         bgcolor: order.side === 'BUY' ? '#00ff88' : '#ff4444',
                                         color: '#000',
-                                        fontWeight: 'bold'
+                                        fontWeight: 'bold',
+                                        fontSize: '0.75rem',
+                                        height: '22px'
                                       }}
                                     />
                                   </TableCell>
                                   <TableCell align="right" sx={{
                                     color: order.side === 'SELL' ? '#ff4444' : '#00ff88',
-                                    fontWeight: 'bold'
+                                    fontWeight: 'bold',
+                                    fontSize: '0.85rem'
                                   }}>
                                     {formatPrice(order.price)}
                                   </TableCell>
-                                  <TableCell align="right">{order.quantity}</TableCell>
-                                  <TableCell align="right">
-                                    {order.filled || 0} ({((order.filled || 0) / order.quantity * 100).toFixed(1)}%)
+                                  <TableCell align="right" sx={{ fontSize: '0.85rem' }}>{order.quantity}</TableCell>
+                                  <TableCell align="right" sx={{ fontSize: '0.8rem' }}>
+                                    {order.filled || 0} ({((order.filled || 0) / order.quantity * 100).toFixed(0)}%)
                                   </TableCell>
                                   <TableCell align="center">
                                     <IconButton
@@ -1116,6 +1119,7 @@ function AppComplete() {
                                       color="error"
                                       onClick={() => handleCancelOrder(order.id)}
                                       title="Cancel Order"
+                                      sx={{ padding: '4px' }}
                                     >
                                       <Delete fontSize="small" />
                                     </IconButton>
@@ -1266,26 +1270,26 @@ function AppComplete() {
                     ) : mmSessions.length === 0 ? (
                       <Alert severity="info">No market making sessions yet. Start one to see it here!</Alert>
                     ) : (
-                      <TableContainer>
-                        <Table size="small">
+                      <TableContainer sx={{ overflowX: 'visible' }}>
+                        <Table size="small" sx={{ tableLayout: 'fixed', width: '100%' }}>
                           <TableHead>
                             <TableRow>
-                              <TableCell>Exchange</TableCell>
-                              <TableCell>Pair</TableCell>
-                              <TableCell>Spread</TableCell>
-                              <TableCell>Amount</TableCell>
-                              <TableCell>Reference</TableCell>
-                              <TableCell>Status</TableCell>
-                              <TableCell align="center">Actions</TableCell>
+                              <TableCell sx={{ width: '15%' }}>Exchange</TableCell>
+                              <TableCell sx={{ width: '18%' }}>Pair</TableCell>
+                              <TableCell sx={{ width: '12%' }}>Spread</TableCell>
+                              <TableCell sx={{ width: '13%' }}>Amount</TableCell>
+                              <TableCell sx={{ width: '12%' }}>Ref</TableCell>
+                              <TableCell sx={{ width: '13%' }}>Status</TableCell>
+                              <TableCell align="center" sx={{ width: '17%' }}>Actions</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
                             {mmSessions.map((session, index) => (
                               <TableRow key={index}>
-                                <TableCell>{session.exchange.toUpperCase()}</TableCell>
-                                <TableCell>{session.symbol}</TableCell>
-                                <TableCell>{session.spread_percentage}%</TableCell>
-                                <TableCell>${session.total_amount}</TableCell>
+                                <TableCell sx={{ fontSize: '0.875rem' }}>{session.exchange.toUpperCase()}</TableCell>
+                                <TableCell sx={{ fontSize: '0.875rem' }}>{session.symbol}</TableCell>
+                                <TableCell sx={{ fontSize: '0.875rem' }}>{session.spread_percentage}%</TableCell>
+                                <TableCell sx={{ fontSize: '0.875rem' }}>${session.total_amount}</TableCell>
                                 <TableCell>
                                   <Chip
                                     label={session.reference_source || 'CEX'}
@@ -1293,7 +1297,8 @@ function AppComplete() {
                                     color={session.reference_source === 'DEX' ? 'warning' : 'info'}
                                     sx={{
                                       fontWeight: 'bold',
-                                      minWidth: '50px'
+                                      fontSize: '0.75rem',
+                                      height: '24px'
                                     }}
                                   />
                                 </TableCell>
@@ -1302,16 +1307,18 @@ function AppComplete() {
                                     label={session.isActive ? 'Active' : session.status}
                                     size="small"
                                     color={session.isActive ? 'success' : session.status === 'stopped' ? 'default' : 'error'}
+                                    sx={{ fontSize: '0.75rem', height: '24px' }}
                                   />
                                 </TableCell>
                                 <TableCell align="center">
-                                  <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                                  <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
                                     {(session.isActive || session.status === 'running') && (
                                       <IconButton
                                         size="small"
                                         color="error"
                                         onClick={() => handleStopMarketMaking(session.session_id)}
                                         title="Stop Market Making"
+                                        sx={{ padding: '4px' }}
                                       >
                                         <Stop fontSize="small" />
                                       </IconButton>
@@ -1321,6 +1328,7 @@ function AppComplete() {
                                       color="error"
                                       onClick={() => handleDeleteMarketMakingSession(session.session_id)}
                                       title="Delete Session"
+                                      sx={{ padding: '4px' }}
                                     >
                                       <Delete fontSize="small" />
                                     </IconButton>
