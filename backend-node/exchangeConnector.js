@@ -31,9 +31,20 @@ export const createExchangeInstance = (exchangeName, apiKey, apiSecret, apiMemo 
       }
     };
 
-    // Some exchanges need password/memo
+    // Handle exchange-specific authentication parameters
     if (apiMemo) {
-      config.password = apiMemo;
+      // BitMart uses 'uid' in the config
+      if (ccxtExchangeName === 'bitmart') {
+        config.uid = apiMemo;
+      }
+      // AscendEX uses 'password' for account group (usually '0' or account ID)
+      else if (ccxtExchangeName === 'ascendex') {
+        config.password = apiMemo;
+      }
+      // Generic fallback for other exchanges that might need password
+      else {
+        config.password = apiMemo;
+      }
     }
 
     const exchange = new ExchangeClass(config);
