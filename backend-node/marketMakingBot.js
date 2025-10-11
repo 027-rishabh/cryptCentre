@@ -11,9 +11,8 @@ import axios from 'axios';
 /**
  * Market Making Bot - Cluster-Based Strategy
  * Places 1 buy + 1 sell order at equal distance from mid price
- * Replaces orders immediately on ANY fill
  * CEX reference: refreshes every 2 minutes
- * DEX reference: only refreshes on fill
+ * DEX reference: waits 2 minutes after fill before placing new orders
  */
 class MarketMakingBot {
     constructor(config, db, userId) {
@@ -36,10 +35,12 @@ class MarketMakingBot {
         // Monitoring intervals
         this.fillCheckInterval = null;
         this.cexRefreshInterval = null; // Only for CEX reference
+        this.dexDelayTimeout = null; // For DEX 2-minute delay
 
         // Configuration
         this.fillCheckFrequency = 5000; // Check fills every 5 seconds
         this.cexRefreshTime = 120000; // 2 minutes for CEX refresh
+        this.dexDelayTime = 120000; // 2 minutes delay for DEX after fill
 
         // Statistics
         this.startTime = Date.now();
@@ -301,10 +302,33 @@ class MarketMakingBot {
                 }
             }
 
-            // If ANY fill occurred, place new orders at SAME prices
+            // If ANY fill occurred, handle replacement based on reference source
             if (anyFill) {
-                console.log(`[MM Bot ${this.sessionId}] Fill detected - placing replacement orders at same prices`);
-                await this.replaceFilledOrders(buyFilled, sellFilled);
+                if (this.referenceSource === 'DEX') {
+                    // DEX mode: Wait 2 minutes before placing new orders
+                    console.log(`[MM Bot ${this.sessionId}] Fill detected - waiting 2 minutes before placing replacement orders (DEX mode)`);
+
+                    // Clear any existing timeout
+                    if (this.dexDelayTimeout) {
+                        clearTimeout(this.dexDelayTimeout);
+                    }
+
+                    // Schedule order replacement after 2 minutes
+                    this.dexDelayTimeout = setTimeout(async () => {
+                        try {
+                            console.log(`[MM Bot ${this.sessionId}] 2-minute delay complete - placing replacement orders`);
+                            await this.replaceFilledOrders(buyFilled, sellFilled);
+                        } catch (error) {
+                            console.error(`[MM Bot ${this.sessionId}] Error during delayed order replacement:`, error.message);
+                        }
+                    }, this.dexDelayTime);
+
+                    console.log(`[MM Bot ${this.sessionId}] Replacement orders scheduled in 2 minutes`);
+                } else {
+                    // CEX mode: Replace immediately
+                    console.log(`[MM Bot ${this.sessionId}] Fill detected - placing replacement orders immediately (CEX mode)`);
+                    await this.replaceFilledOrders(buyFilled, sellFilled);
+                }
             }
 
             // Update cluster metadata
@@ -477,6 +501,13 @@ class MarketMakingBot {
         if (this.cexRefreshInterval) {
             clearInterval(this.cexRefreshInterval);
             this.cexRefreshInterval = null;
+        }
+
+        // Clear DEX delay timeout
+        if (this.dexDelayTimeout) {
+            clearTimeout(this.dexDelayTimeout);
+            this.dexDelayTimeout = null;
+            console.log(`[MM Bot ${this.sessionId}] Cleared pending DEX order replacement`);
         }
 
         // Cancel all active orders
