@@ -1139,7 +1139,7 @@ function AppComplete() {
             {/* Market Making Tab */}
             <TabPanel value={tabValue} index={1}>
               <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
+                <Grid item xs={12} md={5}>
                   <Paper sx={{ p: 3 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                       <Typography variant="h6">
