@@ -927,7 +927,7 @@ function AppComplete() {
                         </Button>
                       </Alert>
                     )}
-                    {user && hasApiKeysForSelectedExchange() && balances.length > 0 && (
+                    {user && hasApiKeysForSelectedExchange() && (
                       <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(0, 255, 136, 0.05)', borderRadius: 1 }}>
                         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                           Available Balance
@@ -938,13 +938,11 @@ function AppComplete() {
                             const quoteBalance = balances.find(b => b.currency === quote);
                             return (
                               <>
-                                {quoteBalance && (
-                                  <Grid item xs={12}>
-                                    <Typography variant="body2">
-                                      <strong>{quote}:</strong> {quoteBalance.available.toFixed(2)}
-                                    </Typography>
-                                  </Grid>
-                                )}
+                                <Grid item xs={12}>
+                                  <Typography variant="body2">
+                                    <strong>{quote}:</strong> {quoteBalance ? quoteBalance.available.toFixed(2) : '0.00'}
+                                  </Typography>
+                                </Grid>
                               </>
                             );
                           })()}
@@ -1022,7 +1020,7 @@ function AppComplete() {
                         </Button>
                       </Alert>
                     )}
-                    {user && hasApiKeysForSelectedExchange() && balances.length > 0 && (
+                    {user && hasApiKeysForSelectedExchange() && (
                       <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(255, 68, 68, 0.05)', borderRadius: 1 }}>
                         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                           Available Balance
@@ -1033,13 +1031,11 @@ function AppComplete() {
                             const baseBalance = balances.find(b => b.currency === base);
                             return (
                               <>
-                                {baseBalance && (
-                                  <Grid item xs={12}>
-                                    <Typography variant="body2">
-                                      <strong>{base}:</strong> {baseBalance.available.toFixed(8)}
-                                    </Typography>
-                                  </Grid>
-                                )}
+                                <Grid item xs={12}>
+                                  <Typography variant="body2">
+                                    <strong>{base}:</strong> {baseBalance ? baseBalance.available.toFixed(8) : '0.00'}
+                                  </Typography>
+                                </Grid>
                               </>
                             );
                           })()}

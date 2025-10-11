@@ -26,6 +26,7 @@ export const createExchangeInstance = async (exchangeName, apiKey, apiSecret, ap
       apiKey: apiKey,
       secret: apiSecret,
       enableRateLimit: true,
+      timeout: 30000, // 30 seconds timeout for all exchanges
       options: {
         defaultType: 'spot',
       }
@@ -58,22 +59,15 @@ export const createExchangeInstance = async (exchangeName, apiKey, apiSecret, ap
         await exchange.loadMarkets();
 
         // Fetch account info to get the account group
-        const accountInfo = await exchange.privateGetInfo();
+        // AscendEX requires calling the balance endpoint first to get account group
+        const balance = await exchange.fetchBalance();
 
-        if (accountInfo && accountInfo.data && accountInfo.data.accountGroup) {
-          const accountGroup = accountInfo.data.accountGroup;
-          console.log(`[AscendEX] Account group retrieved: ${accountGroup}`);
-
-          // Set account group in exchange options
-          exchange.options['account-group'] = accountGroup;
-
-          // Also set it as a header for all requests
-          if (!exchange.headers) {
-            exchange.headers = {};
-          }
-          exchange.headers['x-auth-key'] = apiKey;
+        // The account group is automatically set by CCXT during fetchBalance
+        // It extracts it from the API response and stores it in exchange.options
+        if (exchange.options['account-group']) {
+          console.log(`[AscendEX] Account group retrieved: ${exchange.options['account-group']}`);
         } else {
-          console.warn('[AscendEX] Could not retrieve account group from account info');
+          console.warn('[AscendEX] Could not retrieve account group, using default');
         }
       } catch (accountError) {
         console.error('[AscendEX] Error fetching account group:', accountError.message);
@@ -93,7 +87,10 @@ export const fetchTicker = async (exchangeName, symbol) => {
   try {
     const ccxtExchangeName = EXCHANGE_MAP[exchangeName.toLowerCase()];
     const ExchangeClass = ccxt[ccxtExchangeName];
-    const exchange = new ExchangeClass({ enableRateLimit: true });
+    const exchange = new ExchangeClass({
+      enableRateLimit: true,
+      timeout: 30000 // 30 seconds timeout
+    });
 
     // Load markets to validate if pair exists
     await exchange.loadMarkets();
@@ -133,7 +130,10 @@ export const fetchOrderBook = async (exchangeName, symbol, limit = 10) => {
   try {
     const ccxtExchangeName = EXCHANGE_MAP[exchangeName.toLowerCase()];
     const ExchangeClass = ccxt[ccxtExchangeName];
-    const exchange = new ExchangeClass({ enableRateLimit: true });
+    const exchange = new ExchangeClass({
+      enableRateLimit: true,
+      timeout: 30000 // 30 seconds timeout
+    });
 
     const orderBook = await exchange.fetchOrderBook(symbol, limit);
 
@@ -154,14 +154,13 @@ export const fetchBalance = async (exchange) => {
 
     const balances = [];
     for (const [currency, data] of Object.entries(balance.total)) {
-      if (data && data > 0) {
-        balances.push({
-          currency: currency,
-          available: balance.free[currency] || 0,
-          locked: balance.used[currency] || 0,
-          total: data
-        });
-      }
+      // Show all currencies, including zero balances
+      balances.push({
+        currency: currency,
+        available: balance.free[currency] || 0,
+        locked: balance.used[currency] || 0,
+        total: data || 0
+      });
     }
 
     return balances;
@@ -179,15 +178,15 @@ export const fetchOpenOrders = async (exchange, symbol = null) => {
     return orders.map(order => ({
       id: order.id,
       symbol: order.symbol,
-      side: order.side.toUpperCase(),
-      type: order.type.toUpperCase(),
-      price: order.price,
-      quantity: order.amount,
-      filled: order.filled,
-      remaining: order.remaining,
-      status: order.status.toUpperCase(),
+      side: order.side ? order.side.toUpperCase() : 'UNKNOWN',
+      type: order.type ? order.type.toUpperCase() : 'UNKNOWN',
+      price: order.price || 0,
+      quantity: order.amount || 0,
+      filled: order.filled || 0,
+      remaining: order.remaining || 0,
+      status: order.status ? order.status.toUpperCase() : 'UNKNOWN',
       timestamp: order.timestamp,
-      created_at: new Date(order.timestamp).toISOString()
+      created_at: order.timestamp ? new Date(order.timestamp).toISOString() : new Date().toISOString()
     }));
   } catch (error) {
     console.error('Error fetching open orders:', error.message);
@@ -203,14 +202,14 @@ export const fetchOrderHistory = async (exchange, symbol = null, limit = 100) =>
     return orders.map(order => ({
       id: order.id,
       symbol: order.symbol,
-      side: order.side.toUpperCase(),
-      type: order.type.toUpperCase(),
-      price: order.price,
-      quantity: order.amount,
-      filled: order.filled,
-      status: order.status.toUpperCase(),
+      side: order.side ? order.side.toUpperCase() : 'UNKNOWN',
+      type: order.type ? order.type.toUpperCase() : 'UNKNOWN',
+      price: order.price || 0,
+      quantity: order.amount || 0,
+      filled: order.filled || 0,
+      status: order.status ? order.status.toUpperCase() : 'UNKNOWN',
       timestamp: order.timestamp,
-      created_at: new Date(order.timestamp).toISOString()
+      created_at: order.timestamp ? new Date(order.timestamp).toISOString() : new Date().toISOString()
     }));
   } catch (error) {
     console.error('Error fetching order history:', error.message);
@@ -282,7 +281,10 @@ export const getMarkets = async (exchangeName) => {
   try {
     const ccxtExchangeName = EXCHANGE_MAP[exchangeName.toLowerCase()];
     const ExchangeClass = ccxt[ccxtExchangeName];
-    const exchange = new ExchangeClass({ enableRateLimit: true });
+    const exchange = new ExchangeClass({
+      enableRateLimit: true,
+      timeout: 30000 // 30 seconds timeout
+    });
 
     await exchange.loadMarkets();
 
