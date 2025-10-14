@@ -67,11 +67,13 @@ const initDatabase = () => {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 exchange TEXT NOT NULL,
+                nickname TEXT NOT NULL DEFAULT 'Default',
                 api_key_encrypted TEXT NOT NULL,
                 api_secret_encrypted TEXT NOT NULL,
+                api_memo TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id),
-                UNIQUE(user_id, exchange)
+                UNIQUE(user_id, exchange, nickname)
             )
         `);
 
@@ -157,13 +159,14 @@ const initDatabase = () => {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 exchange TEXT NOT NULL,
+                nickname TEXT NOT NULL DEFAULT 'MM Default',
                 api_key_encrypted TEXT NOT NULL,
                 api_secret_encrypted TEXT NOT NULL,
                 api_memo TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id),
-                UNIQUE(user_id, exchange)
+                UNIQUE(user_id, exchange, nickname)
             )
         `);
 
@@ -437,7 +440,7 @@ app.get('/api/v1/user/profile', verifyToken, (req, res) => {
 
 // API Keys management
 app.post('/api/v1/user/api-keys', verifyToken, (req, res) => {
-    const { exchange, apiKey, apiSecret, apiMemo } = req.body;
+    const { exchange, apiKey, apiSecret, apiMemo, nickname } = req.body;
 
     // Validate exchange
     const validExchanges = ['bingx', 'bitmart', 'ascendx', 'gateio', 'mexc'];
@@ -449,28 +452,37 @@ app.post('/api/v1/user/api-keys', verifyToken, (req, res) => {
         return res.status(400).json({ error: 'API key and secret are required' });
     }
 
+    if (!nickname || nickname.trim().length === 0) {
+        return res.status(400).json({ error: 'Nickname is required' });
+    }
+
+    // Validate nickname (1-50 characters, alphanumeric + spaces/dashes/underscores)
+    const nicknameRegex = /^[a-zA-Z0-9\s\-_]{1,50}$/;
+    if (!nicknameRegex.test(nickname.trim())) {
+        return res.status(400).json({ error: 'Nickname must be 1-50 characters and contain only letters, numbers, spaces, dashes, or underscores' });
+    }
+
     // Encrypt the credentials
     const encryptedKey = encrypt(apiKey);
     const encryptedSecret = encrypt(apiSecret);
     const encryptedMemo = apiMemo ? encrypt(apiMemo) : null;
 
-    // First, need to add memo column if it doesn't exist
-    db.run('ALTER TABLE api_credentials ADD COLUMN api_memo TEXT', () => {
-        // Column might already exist, that's fine
-    });
-
     db.run(
-        'INSERT OR REPLACE INTO api_credentials (user_id, exchange, api_key_encrypted, api_secret_encrypted, api_memo) VALUES (?, ?, ?, ?, ?)',
-        [req.userId, exchange.toLowerCase(), encryptedKey, encryptedSecret, encryptedMemo],
+        'INSERT OR REPLACE INTO api_credentials (user_id, exchange, nickname, api_key_encrypted, api_secret_encrypted, api_memo) VALUES (?, ?, ?, ?, ?, ?)',
+        [req.userId, exchange.toLowerCase(), nickname.trim(), encryptedKey, encryptedSecret, encryptedMemo],
         function(err) {
             if (err) {
                 console.error('Database error:', err);
+                if (err.message.includes('UNIQUE constraint failed')) {
+                    return res.status(400).json({ error: `A key with nickname "${nickname}" already exists for ${exchange}` });
+                }
                 return res.status(500).json({ error: 'Failed to save API keys: ' + err.message });
             }
             res.json({
                 success: true,
-                message: `API keys for ${exchange} saved successfully`,
-                exchange: exchange.toLowerCase()
+                message: `API keys for ${exchange} (${nickname}) saved successfully`,
+                exchange: exchange.toLowerCase(),
+                nickname: nickname.trim()
             });
         }
     );
@@ -478,7 +490,7 @@ app.post('/api/v1/user/api-keys', verifyToken, (req, res) => {
 
 app.get('/api/v1/user/api-keys', verifyToken, (req, res) => {
     db.all(
-        'SELECT id, exchange, created_at FROM api_credentials WHERE user_id = ?',
+        'SELECT id, exchange, nickname, created_at FROM api_credentials WHERE user_id = ?',
         [req.userId],
         (err, keys) => {
             if (err) {
@@ -490,20 +502,20 @@ app.get('/api/v1/user/api-keys', verifyToken, (req, res) => {
 });
 
 // Delete API key endpoint
-app.delete('/api/v1/user/api-keys/:exchange', verifyToken, (req, res) => {
-    const { exchange } = req.params;
+app.delete('/api/v1/user/api-keys/:exchange/:nickname', verifyToken, (req, res) => {
+    const { exchange, nickname } = req.params;
 
     db.run(
-        'DELETE FROM api_credentials WHERE user_id = ? AND exchange = ?',
-        [req.userId, exchange.toLowerCase()],
+        'DELETE FROM api_credentials WHERE user_id = ? AND exchange = ? AND nickname = ?',
+        [req.userId, exchange.toLowerCase(), nickname],
         function(err) {
             if (err) {
                 return res.status(500).json({ error: 'Failed to delete API key' });
             }
             if (this.changes === 0) {
-                return res.status(404).json({ error: 'API key not found for this exchange' });
+                return res.status(404).json({ error: 'API key not found for this exchange and nickname' });
             }
-            res.json({ success: true, message: `API key for ${exchange} deleted successfully` });
+            res.json({ success: true, message: `API key "${nickname}" for ${exchange} deleted successfully` });
         }
     );
 });
@@ -777,6 +789,103 @@ app.get('/api/v1/trading/open-orders', verifyToken, async (req, res) => {
     }
 });
 
+// Aggregated Open Orders - Fetch from ALL saved keys (trading + MM)
+app.get('/api/v1/trading/open-orders-all', verifyToken, async (req, res) => {
+    try {
+        const results = [];
+
+        // Fetch ALL trading API keys for this user
+        const tradingKeys = await new Promise((resolve, reject) => {
+            db.all(
+                'SELECT id, exchange, nickname, api_key_encrypted, api_secret_encrypted, api_memo FROM api_credentials WHERE user_id = ?',
+                [req.userId],
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+
+        // Fetch ALL MM API keys for this user
+        const mmKeys = await new Promise((resolve, reject) => {
+            db.all(
+                'SELECT id, exchange, nickname, api_key_encrypted, api_secret_encrypted, api_memo FROM mm_api_credentials WHERE user_id = ?',
+                [req.userId],
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+
+        // Process trading keys
+        for (const key of tradingKeys) {
+            try {
+                const apiKey = decrypt(key.api_key_encrypted);
+                const apiSecret = decrypt(key.api_secret_encrypted);
+                const apiMemo = key.api_memo ? decrypt(key.api_memo) : null;
+
+                const exchangeInstance = await createExchangeInstance(key.exchange, apiKey, apiSecret, apiMemo);
+                const orders = await fetchOpenOrders(exchangeInstance, null);
+
+                results.push({
+                    nickname: key.nickname,
+                    exchange: key.exchange,
+                    type: 'trading',
+                    orders: orders || []
+                });
+            } catch (error) {
+                console.error(`Error fetching open orders for ${key.nickname} (${key.exchange}):`, error.message);
+                results.push({
+                    nickname: key.nickname,
+                    exchange: key.exchange,
+                    type: 'trading',
+                    orders: [],
+                    error: error.message
+                });
+            }
+        }
+
+        // Process MM keys
+        for (const key of mmKeys) {
+            try {
+                const apiKey = decrypt(key.api_key_encrypted);
+                const apiSecret = decrypt(key.api_secret_encrypted);
+                const apiMemo = key.api_memo ? decrypt(key.api_memo) : null;
+
+                const exchangeInstance = await createExchangeInstance(key.exchange, apiKey, apiSecret, apiMemo);
+                const orders = await fetchOpenOrders(exchangeInstance, null);
+
+                results.push({
+                    nickname: key.nickname,
+                    exchange: key.exchange,
+                    type: 'market_making',
+                    orders: orders || []
+                });
+            } catch (error) {
+                console.error(`Error fetching open orders for ${key.nickname} (${key.exchange}):`, error.message);
+                results.push({
+                    nickname: key.nickname,
+                    exchange: key.exchange,
+                    type: 'market_making',
+                    orders: [],
+                    error: error.message
+                });
+            }
+        }
+
+        res.json({
+            success: true,
+            count: results.length,
+            data: results
+        });
+
+    } catch (error) {
+        console.error('Error fetching aggregated open orders:', error.message);
+        res.status(500).json({ error: 'Failed to fetch aggregated open orders' });
+    }
+});
+
 // Cancel Order
 app.delete('/api/v1/orders/:orderId', verifyToken, async (req, res) => {
     const { orderId } = req.params;
@@ -868,9 +977,106 @@ app.get('/api/v1/trading/balances', verifyToken, async (req, res) => {
     }
 });
 
+// Aggregated Balances - Fetch from ALL saved keys (trading + MM)
+app.get('/api/v1/trading/balances-all', verifyToken, async (req, res) => {
+    try {
+        const results = [];
+
+        // Fetch ALL trading API keys for this user
+        const tradingKeys = await new Promise((resolve, reject) => {
+            db.all(
+                'SELECT id, exchange, nickname, api_key_encrypted, api_secret_encrypted, api_memo FROM api_credentials WHERE user_id = ?',
+                [req.userId],
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+
+        // Fetch ALL MM API keys for this user
+        const mmKeys = await new Promise((resolve, reject) => {
+            db.all(
+                'SELECT id, exchange, nickname, api_key_encrypted, api_secret_encrypted, api_memo FROM mm_api_credentials WHERE user_id = ?',
+                [req.userId],
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+
+        // Process trading keys
+        for (const key of tradingKeys) {
+            try {
+                const apiKey = decrypt(key.api_key_encrypted);
+                const apiSecret = decrypt(key.api_secret_encrypted);
+                const apiMemo = key.api_memo ? decrypt(key.api_memo) : null;
+
+                const exchangeInstance = await createExchangeInstance(key.exchange, apiKey, apiSecret, apiMemo);
+                const balances = await fetchBalance(exchangeInstance);
+
+                results.push({
+                    nickname: key.nickname,
+                    exchange: key.exchange,
+                    type: 'trading',
+                    balances: balances.filter(b => b.total > 0) // Only show non-zero balances
+                });
+            } catch (error) {
+                console.error(`Error fetching balance for ${key.nickname} (${key.exchange}):`, error.message);
+                results.push({
+                    nickname: key.nickname,
+                    exchange: key.exchange,
+                    type: 'trading',
+                    balances: [],
+                    error: error.message
+                });
+            }
+        }
+
+        // Process MM keys
+        for (const key of mmKeys) {
+            try {
+                const apiKey = decrypt(key.api_key_encrypted);
+                const apiSecret = decrypt(key.api_secret_encrypted);
+                const apiMemo = key.api_memo ? decrypt(key.api_memo) : null;
+
+                const exchangeInstance = await createExchangeInstance(key.exchange, apiKey, apiSecret, apiMemo);
+                const balances = await fetchBalance(exchangeInstance);
+
+                results.push({
+                    nickname: key.nickname,
+                    exchange: key.exchange,
+                    type: 'market_making',
+                    balances: balances.filter(b => b.total > 0) // Only show non-zero balances
+                });
+            } catch (error) {
+                console.error(`Error fetching balance for ${key.nickname} (${key.exchange}):`, error.message);
+                results.push({
+                    nickname: key.nickname,
+                    exchange: key.exchange,
+                    type: 'market_making',
+                    balances: [],
+                    error: error.message
+                });
+            }
+        }
+
+        res.json({
+            success: true,
+            count: results.length,
+            data: results
+        });
+
+    } catch (error) {
+        console.error('Error fetching aggregated balances:', error.message);
+        res.status(500).json({ error: 'Failed to fetch aggregated balances' });
+    }
+});
+
 // Market Making API Keys management
 app.post('/api/v1/mm/api-keys', verifyToken, (req, res) => {
-    const { exchange, apiKey, apiSecret, apiMemo } = req.body;
+    const { exchange, apiKey, apiSecret, apiMemo, nickname } = req.body;
 
     // Validate exchange
     const validExchanges = ['bingx', 'bitmart', 'ascendx', 'gateio', 'mexc'];
@@ -882,23 +1088,37 @@ app.post('/api/v1/mm/api-keys', verifyToken, (req, res) => {
         return res.status(400).json({ error: 'API key and secret are required' });
     }
 
+    if (!nickname || nickname.trim().length === 0) {
+        return res.status(400).json({ error: 'Nickname is required' });
+    }
+
+    // Validate nickname (1-50 characters, alphanumeric + spaces/dashes/underscores)
+    const nicknameRegex = /^[a-zA-Z0-9\s\-_]{1,50}$/;
+    if (!nicknameRegex.test(nickname.trim())) {
+        return res.status(400).json({ error: 'Nickname must be 1-50 characters and contain only letters, numbers, spaces, dashes, or underscores' });
+    }
+
     // Encrypt the credentials
     const encryptedKey = encrypt(apiKey);
     const encryptedSecret = encrypt(apiSecret);
     const encryptedMemo = apiMemo ? encrypt(apiMemo) : null;
 
     db.run(
-        'INSERT OR REPLACE INTO mm_api_credentials (user_id, exchange, api_key_encrypted, api_secret_encrypted, api_memo, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
-        [req.userId, exchange.toLowerCase(), encryptedKey, encryptedSecret, encryptedMemo],
+        'INSERT OR REPLACE INTO mm_api_credentials (user_id, exchange, nickname, api_key_encrypted, api_secret_encrypted, api_memo, updated_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+        [req.userId, exchange.toLowerCase(), nickname.trim(), encryptedKey, encryptedSecret, encryptedMemo],
         function(err) {
             if (err) {
                 console.error('Database error:', err);
+                if (err.message.includes('UNIQUE constraint failed')) {
+                    return res.status(400).json({ error: `A MM key with nickname "${nickname}" already exists for ${exchange}` });
+                }
                 return res.status(500).json({ error: 'Failed to save MM API keys: ' + err.message });
             }
             res.json({
                 success: true,
-                message: `Market Making API keys for ${exchange} saved successfully`,
-                exchange: exchange.toLowerCase()
+                message: `Market Making API keys for ${exchange} (${nickname}) saved successfully`,
+                exchange: exchange.toLowerCase(),
+                nickname: nickname.trim()
             });
         }
     );
@@ -906,7 +1126,7 @@ app.post('/api/v1/mm/api-keys', verifyToken, (req, res) => {
 
 app.get('/api/v1/mm/api-keys', verifyToken, (req, res) => {
     db.all(
-        'SELECT id, exchange, created_at, updated_at FROM mm_api_credentials WHERE user_id = ?',
+        'SELECT id, exchange, nickname, created_at, updated_at FROM mm_api_credentials WHERE user_id = ?',
         [req.userId],
         (err, keys) => {
             if (err) {
@@ -921,36 +1141,33 @@ app.get('/api/v1/mm/api-keys', verifyToken, (req, res) => {
 app.get('/api/v1/mm/api-keys/:exchange', verifyToken, (req, res) => {
     const { exchange } = req.params;
 
-    db.get(
-        'SELECT id, exchange, created_at, updated_at FROM mm_api_credentials WHERE user_id = ? AND exchange = ?',
+    db.all(
+        'SELECT id, exchange, nickname, created_at, updated_at FROM mm_api_credentials WHERE user_id = ? AND exchange = ?',
         [req.userId, exchange.toLowerCase()],
         (err, keys) => {
             if (err) {
                 return res.status(500).json({ error: 'Failed to fetch MM API key' });
             }
-            if (!keys) {
-                return res.status(404).json({ error: `No MM API keys found for ${exchange}` });
-            }
-            res.json(keys);
+            res.json(keys || []);
         }
     );
 });
 
 // Delete MM API key endpoint
-app.delete('/api/v1/mm/api-keys/:exchange', verifyToken, (req, res) => {
-    const { exchange } = req.params;
+app.delete('/api/v1/mm/api-keys/:exchange/:nickname', verifyToken, (req, res) => {
+    const { exchange, nickname } = req.params;
 
     db.run(
-        'DELETE FROM mm_api_credentials WHERE user_id = ? AND exchange = ?',
-        [req.userId, exchange.toLowerCase()],
+        'DELETE FROM mm_api_credentials WHERE user_id = ? AND exchange = ? AND nickname = ?',
+        [req.userId, exchange.toLowerCase(), nickname],
         function(err) {
             if (err) {
                 return res.status(500).json({ error: 'Failed to delete MM API key' });
             }
             if (this.changes === 0) {
-                return res.status(404).json({ error: 'MM API key not found for this exchange' });
+                return res.status(404).json({ error: 'MM API key not found for this exchange and nickname' });
             }
-            res.json({ success: true, message: `MM API key for ${exchange} deleted successfully` });
+            res.json({ success: true, message: `MM API key "${nickname}" for ${exchange} deleted successfully` });
         }
     );
 });

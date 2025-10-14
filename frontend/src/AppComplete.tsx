@@ -41,6 +41,9 @@ import {
   ListItemSecondaryAction,
   InputAdornment,
   Autocomplete,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material'
 import {
   ShowChart,
@@ -56,6 +59,7 @@ import {
   VisibilityOff,
   AccountCircle,
   Stop,
+  ExpandMore,
 } from '@mui/icons-material'
 import axios from 'axios'
 
@@ -146,6 +150,7 @@ function AppComplete() {
     apiKey: '',
     apiSecret: '',
     apiMemo: '',
+    nickname: '',
   })
 
   // Trading state
@@ -162,6 +167,8 @@ function AppComplete() {
   const [orders, setOrders] = useState<any[]>([])
   const [openOrders, setOpenOrders] = useState<any[]>([])
   const [balances, setBalances] = useState<any[]>([])
+  const [aggregatedBalances, setAggregatedBalances] = useState<any[]>([])
+  const [aggregatedOpenOrders, setAggregatedOpenOrders] = useState<any[]>([])
   const [availablePairs, setAvailablePairs] = useState<string[]>(TRADING_PAIRS.bingx)
 
   // Notifications
@@ -182,6 +189,7 @@ function AppComplete() {
     apiKey: '',
     apiSecret: '',
     apiMemo: '',
+    nickname: '',
   })
 
   // MM Sessions state
@@ -339,6 +347,36 @@ function AppComplete() {
     }
   }
 
+  // Fetch aggregated balances from ALL keys (trading + MM)
+  const fetchAggregatedBalances = async () => {
+    if (!token) return
+
+    try {
+      const response = await axios.get('http://localhost:8080/api/v1/trading/balances-all')
+      if (response.data.success) {
+        setAggregatedBalances(response.data.data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch aggregated balances:', error)
+      setAggregatedBalances([])
+    }
+  }
+
+  // Fetch aggregated open orders from ALL keys (trading + MM)
+  const fetchAggregatedOpenOrders = async () => {
+    if (!token) return
+
+    try {
+      const response = await axios.get('http://localhost:8080/api/v1/trading/open-orders-all')
+      if (response.data.success) {
+        setAggregatedOpenOrders(response.data.data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch aggregated open orders:', error)
+      setAggregatedOpenOrders([])
+    }
+  }
+
   // Cancel order
   const handleCancelOrder = async (orderId: string) => {
     if (!token) return
@@ -415,6 +453,8 @@ function AppComplete() {
       setOrders([])
       setBalances([])
       setOpenOrders([])
+      setAggregatedBalances([])
+      setAggregatedOpenOrders([])
       return
     }
 
@@ -423,9 +463,8 @@ function AppComplete() {
       // Limit Orders tab - fetch balances
       fetchBalances()
     } else if (tabValue === 1) {
-      // Open Orders tab - fetch open orders and balances
-      fetchOpenOrders()
-      fetchBalances()
+      // Open Orders tab - fetch aggregated open orders from ALL keys
+      fetchAggregatedOpenOrders()
     } else if (tabValue === 2) {
       // Market Making tab - fetch balances and MM sessions
       fetchBalances()
@@ -434,8 +473,8 @@ function AppComplete() {
       // Order History tab - fetch order history only when tab is active
       fetchOrders()
     } else if (tabValue === 4) {
-      // Balances tab - fetch balances only when tab is active
-      fetchBalances()
+      // Balances tab - fetch aggregated balances from ALL keys
+      fetchAggregatedBalances()
     }
   }, [token, selectedExchange, selectedPair, tabValue, apiKeys])
 
@@ -492,8 +531,8 @@ function AppComplete() {
 
   // Handle save API key
   const handleSaveApiKey = async () => {
-    if (!newApiKey.exchange || !newApiKey.apiKey || !newApiKey.apiSecret) {
-      setSnackbar({ open: true, message: 'Please fill all required fields', severity: 'warning' })
+    if (!newApiKey.exchange || !newApiKey.apiKey || !newApiKey.apiSecret || !newApiKey.nickname) {
+      setSnackbar({ open: true, message: 'Please fill all required fields (including nickname)', severity: 'warning' })
       return
     }
 
@@ -501,17 +540,17 @@ function AppComplete() {
       await axios.post('http://localhost:8080/api/v1/user/api-keys', newApiKey)
       setSnackbar({ open: true, message: 'API key saved successfully!', severity: 'success' })
       fetchApiKeys()
-      setNewApiKey({ exchange: '', apiKey: '', apiSecret: '', apiMemo: '' })
+      setNewApiKey({ exchange: '', apiKey: '', apiSecret: '', apiMemo: '', nickname: '' })
     } catch (error: any) {
       setSnackbar({ open: true, message: error.response?.data?.error || 'Failed to save API key', severity: 'error' })
     }
   }
 
   // Handle delete API key
-  const handleDeleteApiKey = async (exchange: string) => {
+  const handleDeleteApiKey = async (exchange: string, nickname: string) => {
     try {
-      await axios.delete(`http://localhost:8080/api/v1/user/api-keys/${exchange}`)
-      setSnackbar({ open: true, message: `API key for ${exchange} deleted successfully!`, severity: 'success' })
+      await axios.delete(`http://localhost:8080/api/v1/user/api-keys/${exchange}/${encodeURIComponent(nickname)}`)
+      setSnackbar({ open: true, message: `API key "${nickname}" for ${exchange} deleted successfully!`, severity: 'success' })
       fetchApiKeys()
     } catch (error: any) {
       setSnackbar({ open: true, message: error.response?.data?.error || 'Failed to delete API key', severity: 'error' })
@@ -546,8 +585,8 @@ function AppComplete() {
 
   // Handle save MM API key
   const handleSaveMmApiKey = async () => {
-    if (!newMmApiKey.exchange || !newMmApiKey.apiKey || !newMmApiKey.apiSecret) {
-      setSnackbar({ open: true, message: 'Please fill all required fields', severity: 'warning' })
+    if (!newMmApiKey.exchange || !newMmApiKey.apiKey || !newMmApiKey.apiSecret || !newMmApiKey.nickname) {
+      setSnackbar({ open: true, message: 'Please fill all required fields (including nickname)', severity: 'warning' })
       return
     }
 
@@ -555,17 +594,17 @@ function AppComplete() {
       await axios.post('http://localhost:8080/api/v1/mm/api-keys', newMmApiKey)
       setSnackbar({ open: true, message: 'MM API key saved successfully!', severity: 'success' })
       fetchMmApiKeys()
-      setNewMmApiKey({ exchange: '', apiKey: '', apiSecret: '', apiMemo: '' })
+      setNewMmApiKey({ exchange: '', apiKey: '', apiSecret: '', apiMemo: '', nickname: '' })
     } catch (error: any) {
       setSnackbar({ open: true, message: error.response?.data?.error || 'Failed to save MM API key', severity: 'error' })
     }
   }
 
   // Handle delete MM API key
-  const handleDeleteMmApiKey = async (exchange: string) => {
+  const handleDeleteMmApiKey = async (exchange: string, nickname: string) => {
     try {
-      await axios.delete(`http://localhost:8080/api/v1/mm/api-keys/${exchange}`)
-      setSnackbar({ open: true, message: `MM API key for ${exchange} deleted successfully!`, severity: 'success' })
+      await axios.delete(`http://localhost:8080/api/v1/mm/api-keys/${exchange}/${encodeURIComponent(nickname)}`)
+      setSnackbar({ open: true, message: `MM API key "${nickname}" for ${exchange} deleted successfully!`, severity: 'success' })
       fetchMmApiKeys()
     } catch (error: any) {
       setSnackbar({ open: true, message: error.response?.data?.error || 'Failed to delete MM API key', severity: 'error' })
@@ -1098,102 +1137,160 @@ function AppComplete() {
 
             {/* Open Orders Tab */}
             <TabPanel value={tabValue} index={1}>
-              <Paper sx={{ p: 3 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                  <Typography variant="h6">
-                    Open Orders ({selectedPair})
-                  </Typography>
-                  {user && hasApiKeysForSelectedExchange() && openOrders.length > 0 && (
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      size="small"
-                      startIcon={<DeleteSweep />}
-                      onClick={handleCancelAllOrders}
-                      disabled={loading}
-                    >
-                      Cancel All
-                    </Button>
-                  )}
-                </Box>
-                {!user ? (
-                  <Alert severity="info">Login to view your open orders</Alert>
-                ) : !hasApiKeysForSelectedExchange() ? (
-                  <Alert severity="warning">
-                    Add API keys for {selectedExchange.toUpperCase()} to view open orders
-                  </Alert>
-                ) : (
-                  <TableContainer sx={{ overflowX: 'visible' }}>
-                    <Table size="small" sx={{ tableLayout: 'fixed', width: '100%' }}>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell sx={{ width: '12%' }}>Side</TableCell>
-                          <TableCell align="right" sx={{ width: '28%' }}>Price</TableCell>
-                          <TableCell align="right" sx={{ width: '20%' }}>Quantity</TableCell>
-                          <TableCell align="right" sx={{ width: '25%' }}>Filled</TableCell>
-                          <TableCell align="center" sx={{ width: '15%' }}>Action</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {openOrders.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={5} align="center">
-                              No open orders for {selectedPair}
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          openOrders.map((order, index) => (
-                            <TableRow
-                              key={index}
-                              sx={{
-                                bgcolor: order.side === 'BUY'
-                                  ? 'rgba(0, 255, 136, 0.05)'
-                                  : 'rgba(255, 68, 68, 0.05)'
-                              }}
-                            >
-                              <TableCell>
-                                <Chip
-                                  label={order.side}
-                                  size="small"
-                                  sx={{
-                                    bgcolor: order.side === 'BUY' ? '#00ff88' : '#ff4444',
-                                    color: '#000',
-                                    fontWeight: 'bold',
-                                    fontSize: '0.75rem',
-                                    height: '24px'
-                                  }}
-                                />
-                              </TableCell>
-                              <TableCell align="right" sx={{
-                                color: order.side === 'BUY' ? '#00ff88' : '#ff4444',
-                                fontWeight: 'bold',
-                                fontSize: '0.85rem'
-                              }}>
-                                {formatPrice(order.price)}
-                              </TableCell>
-                              <TableCell align="right" sx={{ fontSize: '0.85rem' }}>{order.quantity}</TableCell>
-                              <TableCell align="right" sx={{ fontSize: '0.8rem' }}>
-                                {order.filled || 0} ({((order.filled || 0) / order.quantity * 100).toFixed(0)}%)
-                              </TableCell>
-                              <TableCell align="center">
-                                <IconButton
-                                  size="small"
-                                  color="error"
-                                  onClick={() => handleCancelOrder(order.id)}
-                                  title="Cancel Order"
-                                  sx={{ padding: '4px' }}
-                                >
-                                  <Delete fontSize="small" />
-                                </IconButton>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">
+                  All Open Orders (All API Keys)
+                </Typography>
+                {user && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<Refresh />}
+                    onClick={fetchAggregatedOpenOrders}
+                  >
+                    Refresh
+                  </Button>
                 )}
-              </Paper>
+              </Box>
+
+              {!user ? (
+                <Alert severity="info">Login to view open orders from all your API keys</Alert>
+              ) : aggregatedOpenOrders.length === 0 ? (
+                <Alert severity="warning">
+                  No open orders found. Add API keys (Trading or Market Making) to view open orders.
+                  <Button size="small" onClick={() => setApiKeysOpen(true)} sx={{ ml: 1 }}>
+                    Add Trading API Keys
+                  </Button>
+                  <Button size="small" onClick={() => setMmApiKeysOpen(true)} sx={{ ml: 1 }}>
+                    Add MM API Keys
+                  </Button>
+                </Alert>
+              ) : (
+                <Box>
+                  {aggregatedOpenOrders.map((accountData, index) => (
+                    <Accordion key={index} defaultExpanded={index === 0}>
+                      <AccordionSummary expandIcon={<ExpandMore />}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                            {accountData.nickname}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {accountData.exchange.toUpperCase()}
+                          </Typography>
+                          <Chip
+                            label={accountData.type === 'trading' ? 'Trading' : 'Market Making'}
+                            size="small"
+                            color={accountData.type === 'trading' ? 'primary' : 'secondary'}
+                          />
+                          {accountData.orders && accountData.orders.length > 0 && (
+                            <Chip
+                              label={`${accountData.orders.length} orders`}
+                              size="small"
+                              color="info"
+                              variant="outlined"
+                            />
+                          )}
+                          {accountData.error && (
+                            <Chip
+                              label="Error"
+                              size="small"
+                              color="error"
+                              sx={{ ml: 'auto' }}
+                            />
+                          )}
+                        </Box>
+                      </AccordionSummary>
+                      <AccordionDetails>
+                        {accountData.error ? (
+                          <Alert severity="error">
+                            Failed to fetch open orders: {accountData.error}
+                          </Alert>
+                        ) : !accountData.orders || accountData.orders.length === 0 ? (
+                          <Alert severity="info">
+                            No open orders
+                          </Alert>
+                        ) : (
+                          <TableContainer>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell>Symbol</TableCell>
+                                  <TableCell>Side</TableCell>
+                                  <TableCell align="right">Price</TableCell>
+                                  <TableCell align="right">Quantity</TableCell>
+                                  <TableCell align="right">Filled</TableCell>
+                                  <TableCell>Status</TableCell>
+                                  <TableCell align="center">Action</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {accountData.orders.map((order: any, orderIndex: number) => (
+                                  <TableRow
+                                    key={orderIndex}
+                                    sx={{
+                                      bgcolor: order.side === 'BUY'
+                                        ? 'rgba(0, 255, 136, 0.05)'
+                                        : 'rgba(255, 68, 68, 0.05)'
+                                    }}
+                                  >
+                                    <TableCell sx={{ fontWeight: 'bold' }}>
+                                      {order.symbol}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Chip
+                                        label={order.side}
+                                        size="small"
+                                        sx={{
+                                          bgcolor: order.side === 'BUY' ? '#00ff88' : '#ff4444',
+                                          color: '#000',
+                                          fontWeight: 'bold',
+                                          fontSize: '0.75rem',
+                                          height: '24px'
+                                        }}
+                                      />
+                                    </TableCell>
+                                    <TableCell align="right" sx={{
+                                      color: order.side === 'BUY' ? '#00ff88' : '#ff4444',
+                                      fontWeight: 'bold'
+                                    }}>
+                                      {formatPrice(order.price)}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                      {order.quantity}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                      {order.filled || 0} ({((order.filled || 0) / order.quantity * 100).toFixed(0)}%)
+                                    </TableCell>
+                                    <TableCell>
+                                      <Chip
+                                        label={order.status}
+                                        size="small"
+                                        color={order.status === 'OPEN' ? 'warning' : 'default'}
+                                        sx={{ fontSize: '0.75rem' }}
+                                      />
+                                    </TableCell>
+                                    <TableCell align="center">
+                                      <IconButton
+                                        size="small"
+                                        color="error"
+                                        onClick={() => handleCancelOrder(order.id)}
+                                        title="Cancel Order"
+                                        sx={{ padding: '4px' }}
+                                      >
+                                        <Delete fontSize="small" />
+                                      </IconButton>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        )}
+                      </AccordionDetails>
+                    </Accordion>
+                  ))}
+                </Box>
+              )}
             </TabPanel>
 
             {/* Market Making Tab */}
@@ -1506,49 +1603,115 @@ function AppComplete() {
 
             {/* Balances Tab */}
             <TabPanel value={tabValue} index={4}>
-              <TableContainer component={Paper}>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Currency</TableCell>
-                      <TableCell align="right">Available</TableCell>
-                      <TableCell align="right">Locked</TableCell>
-                      <TableCell align="right">Total</TableCell>
-                      <TableCell align="right">USD Value</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {!user ? (
-                      <TableRow>
-                        <TableCell colSpan={5} align="center">
-                          Login to view balances
-                        </TableCell>
-                      </TableRow>
-                    ) : balances.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} align="center">
-                          No balances available. Add API keys for {selectedExchange}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      balances.map((balance, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{balance.currency}</TableCell>
-                          <TableCell align="right">{balance.available.toFixed(8)}</TableCell>
-                          <TableCell align="right">{balance.locked.toFixed(8)}</TableCell>
-                          <TableCell align="right">{balance.total.toFixed(8)}</TableCell>
-                          <TableCell align="right">
-                            {balance.currency === 'USDT' ?
-                              formatPrice(balance.total) :
-                              '---'
-                            }
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">
+                  All Balances (All API Keys)
+                </Typography>
+                {user && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<Refresh />}
+                    onClick={fetchAggregatedBalances}
+                  >
+                    Refresh
+                  </Button>
+                )}
+              </Box>
+
+              {!user ? (
+                <Alert severity="info">Login to view balances from all your API keys</Alert>
+              ) : aggregatedBalances.length === 0 ? (
+                <Alert severity="warning">
+                  No balances found. Add API keys (Trading or Market Making) to view balances.
+                  <Button size="small" onClick={() => setApiKeysOpen(true)} sx={{ ml: 1 }}>
+                    Add Trading API Keys
+                  </Button>
+                  <Button size="small" onClick={() => setMmApiKeysOpen(true)} sx={{ ml: 1 }}>
+                    Add MM API Keys
+                  </Button>
+                </Alert>
+              ) : (
+                <Box>
+                  {aggregatedBalances.map((accountData, index) => (
+                    <Accordion key={index} defaultExpanded={index === 0}>
+                      <AccordionSummary expandIcon={<ExpandMore />}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                            {accountData.nickname}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {accountData.exchange.toUpperCase()}
+                          </Typography>
+                          <Chip
+                            label={accountData.type === 'trading' ? 'Trading' : 'Market Making'}
+                            size="small"
+                            color={accountData.type === 'trading' ? 'primary' : 'secondary'}
+                            sx={{ ml: 'auto' }}
+                          />
+                          {accountData.error && (
+                            <Chip
+                              label="Error"
+                              size="small"
+                              color="error"
+                              sx={{ ml: 1 }}
+                            />
+                          )}
+                        </Box>
+                      </AccordionSummary>
+                      <AccordionDetails>
+                        {accountData.error ? (
+                          <Alert severity="error">
+                            Failed to fetch balances: {accountData.error}
+                          </Alert>
+                        ) : accountData.balances.length === 0 ? (
+                          <Alert severity="info">
+                            No balances with non-zero amounts
+                          </Alert>
+                        ) : (
+                          <TableContainer>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell>Currency</TableCell>
+                                  <TableCell align="right">Available</TableCell>
+                                  <TableCell align="right">Locked</TableCell>
+                                  <TableCell align="right">Total</TableCell>
+                                  <TableCell align="right">USD Value</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {accountData.balances.map((balance: any, balanceIndex: number) => (
+                                  <TableRow key={balanceIndex}>
+                                    <TableCell sx={{ fontWeight: 'bold' }}>
+                                      {balance.currency}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                      {balance.available.toFixed(8)}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                      {balance.locked.toFixed(8)}
+                                    </TableCell>
+                                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                                      {balance.total.toFixed(8)}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                      {balance.currency === 'USDT' ?
+                                        formatPrice(balance.total) :
+                                        '---'
+                                      }
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        )}
+                      </AccordionDetails>
+                    </Accordion>
+                  ))}
+                </Box>
+              )}
             </TabPanel>
           </Paper>
         </Container>
@@ -1661,14 +1824,14 @@ function AppComplete() {
               apiKeys.map((key, index) => (
                 <ListItem key={index}>
                   <ListItemText
-                    primary={key.exchange.toUpperCase()}
+                    primary={`${key.exchange.toUpperCase()} - ${key.nickname}`}
                     secondary={`Added: ${new Date(key.created_at).toLocaleDateString()}`}
                   />
                   <ListItemSecondaryAction>
                     <IconButton
                       edge="end"
                       aria-label="delete"
-                      onClick={() => handleDeleteApiKey(key.exchange)}
+                      onClick={() => handleDeleteApiKey(key.exchange, key.nickname)}
                     >
                       <Delete />
                     </IconButton>
@@ -1697,6 +1860,17 @@ function AppComplete() {
               <MenuItem value="mexc">MEXC</MenuItem>
             </Select>
           </FormControl>
+
+          <TextField
+            fullWidth
+            label="Key Nickname"
+            value={newApiKey.nickname}
+            onChange={(e) => setNewApiKey({ ...newApiKey, nickname: e.target.value })}
+            sx={{ mb: 2 }}
+            placeholder="e.g., 'Main Account', 'Trading Bot', etc."
+            helperText="Give this API key a memorable name"
+            required
+          />
 
           <TextField
             fullWidth
@@ -1759,14 +1933,14 @@ function AppComplete() {
               mmApiKeys.map((key, index) => (
                 <ListItem key={index}>
                   <ListItemText
-                    primary={key.exchange.toUpperCase()}
+                    primary={`${key.exchange.toUpperCase()} - ${key.nickname}`}
                     secondary={`Added: ${new Date(key.created_at).toLocaleDateString()}`}
                   />
                   <ListItemSecondaryAction>
                     <IconButton
                       edge="end"
                       aria-label="delete"
-                      onClick={() => handleDeleteMmApiKey(key.exchange)}
+                      onClick={() => handleDeleteMmApiKey(key.exchange, key.nickname)}
                     >
                       <Delete />
                     </IconButton>
@@ -1795,6 +1969,17 @@ function AppComplete() {
               <MenuItem value="mexc">MEXC</MenuItem>
             </Select>
           </FormControl>
+
+          <TextField
+            fullWidth
+            label="Key Nickname"
+            value={newMmApiKey.nickname}
+            onChange={(e) => setNewMmApiKey({ ...newMmApiKey, nickname: e.target.value })}
+            sx={{ mb: 2 }}
+            placeholder="e.g., 'MM Account 1', 'Market Maker Bot', etc."
+            helperText="Give this MM API key a memorable name"
+            required
+          />
 
           <TextField
             fullWidth
